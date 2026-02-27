@@ -147,9 +147,20 @@ async function oneTurn() {
       if (p.everyMin != null) runtime.state.defaults.followup.everyMin = Number(p.everyMin);
       runtime.state.defaults.followup.maxCount = p.maxCount ?? null;
       if (p.quietHours) runtime.state.defaults.followup.quietHours = p.quietHours;
+    } else {
+      // once
+      runtime.state.defaults.followup.maxCount = null;
     }
+
     saveJson(defaultsPath, runtime.state.defaults);
-    await say(result.say);
+
+    const d = runtime.state.defaults.followup;
+    const quiet = d.quietHours ? `${d.quietHours.start}:00 to ${d.quietHours.end}:00` : 'no quiet hours';
+    const summary = d.mode === 'once'
+      ? `Got it. Default follow-ups set to just once.`
+      : `Got it. Default follow-ups: every ${d.everyMin ?? 15} minutes, max ${d.maxCount ?? 'no limit'}, quiet hours ${quiet}.`;
+
+    await say(summary);
     return;
   }
   runtime.state = result.state ?? runtime.state;
