@@ -1,0 +1,19 @@
+[Unit]
+Description=PocketAgent (voice reminder assistant)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pocketagent
+Environment=NODE_ENV=production
+# Provide OPENAI_API_KEY via /etc/default/pocketagent or systemd drop-in
+EnvironmentFile=-/etc/default/pocketagent
+ExecStart=/usr/bin/node /opt/pocketagent/pocketagent/index.js
+Restart=on-failure
+RestartSec=2
+User=pi
+Group=pi
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+{
+  "name": "pocketagent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pocketable Raspberry Pi voice agent: hold-to-talk + reminders with follow-ups.",
+  "scripts": {
+    "start": "node pocketagent/index.js",
+    "dev": "node pocketagent/index.js",
+    "lint": "node -c pocketagent/index.js"
+  },
+  "dependencies": {
+    "node-record-lpcm16": "^1.0.1",
+    "node-schedule": "^2.1.1"
+  }
+}
