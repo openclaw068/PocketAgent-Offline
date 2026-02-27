@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PocketAgent — Web Tester</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="grain"></div>
+  <main class="shell">
+    <header class="top">
+      <div class="brand">
+        <div class="sigil" aria-hidden="true">PA</div>
+        <div class="meta">
+          <div class="name">PocketAgent</div>
+          <div class="tag">web tester • logic-only</div>
+        </div>
+      </div>
+      <div class="pill" id="status">offline</div>
+    </header>
+
+    <section class="panel">
+      <div class="transcript" id="transcript" aria-live="polite"></div>
+
+      <form class="composer" id="composer">
+        <input
+          id="input"
+          type="text"
+          placeholder="Try: 'I need to remember to take out the trash tomorrow'"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button type="submit" class="send">Send</button>
+      </form>
+
+      <details class="debug">
+        <summary>Debug</summary>
+        <pre id="debug"></pre>
+      </details>
+    </section>
+
+    <footer class="foot">
+      <div class="hint">
+        Tip: You can set defaults conversationally — e.g. “My default follow-ups should be every 15 minutes, max 8, quiet hours 11pm to 7am.”
+      </div>
+    </footer>
+  </main>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

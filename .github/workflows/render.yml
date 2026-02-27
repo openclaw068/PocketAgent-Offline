@@ -1,0 +1,21 @@
+name: Deploy PocketAgent Web Tester
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Render
+        env:
+          deploy_hook: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$deploy_hook" ]; then
+            echo "Missing secrets.RENDER_DEPLOY_HOOK" >&2
+            exit 1
+          fi
+          curl -fsSL -X POST "$deploy_hook"

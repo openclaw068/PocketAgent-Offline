@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: pocketagent-web
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run web
+    envVars:
+      - key: POCKETAGENT_CHAT_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      # Set OPENAI_API_KEY in Render dashboard (secret)

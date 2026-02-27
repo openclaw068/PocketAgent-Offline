@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node pocketagent/index.js",
     "dev": "node pocketagent/index.js",
+    "web": "node web/server.js",
     "lint": "node -c pocketagent/index.js"
   },
   "dependencies": {
