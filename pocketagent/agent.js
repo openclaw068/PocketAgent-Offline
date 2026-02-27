@@ -10,11 +10,29 @@ export async function handleUtterance({ baseUrl, apiKeyEnv, model, text, state }
   // If we are mid-flow asking for time
   if (state.pending?.kind === 'ask_time') {
     // Accept simple times like 8am, 8:15, tomorrow 8am is handled earlier.
-    return { intent: 'set_time', timeText: t, say: `Okay — ${t}. How often should I remind you if you don't answer? You can say something like every 15 minutes, or just once.`, state: { ...state, pending: { kind: 'ask_repeat', reminderText: state.pending.reminderText, timeText: t } } };
+    return {
+      intent: 'set_time',
+      timeText: t,
+      say: `Okay — ${t}. For follow-ups if you don’t answer, do you want to use your default settings, or customize this reminder?`,
+      state: { ...state, pending: { kind: 'ask_followup', reminderText: state.pending.reminderText, timeText: t } }
+    };
   }
 
-  if (state.pending?.kind === 'ask_repeat') {
-    return { intent: 'set_repeat', repeatText: t, say: `Got it. I'll set that up.`, state: { ...state, pending: null, collected: { reminderText: state.pending.reminderText, timeText: state.pending.timeText, repeatText: t } } };
+  if (state.pending?.kind === 'ask_followup') {
+    return {
+      intent: 'set_followup',
+      followupText: t,
+      say: `Got it. I'll set that up.`,
+      state: {
+        ...state,
+        pending: null,
+        collected: {
+          reminderText: state.pending.reminderText,
+          timeText: state.pending.timeText,
+          followupText: t
+        }
+      }
+    };
   }
 
   // If user says they completed something

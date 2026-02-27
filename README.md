@@ -12,6 +12,7 @@ This repo contains a working skeleton:
 - Transcribe via OpenAI Audio Transcriptions
 - TTS via OpenAI Audio Speech
 - Local reminder scheduler with follow-ups
+- After each spoken reminder, it listens briefly for a “yes/done” to auto-clear
 - **Button is currently simulated by pressing ENTER** (GPIO wiring next)
 
 ## Requirements

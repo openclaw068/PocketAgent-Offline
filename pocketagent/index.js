@@ -31,11 +31,35 @@ const runtime = {
   }
 };
 
-function parseRepeat(repeatText) {
-  const t = repeatText.toLowerCase();
-  if (t.includes('just once') || t.includes('once')) return { followupEveryMin: null };
-  const m = t.match(/every\s+(\d+)\s*(min|minute|minutes)/);
+function parseFollowup(followupText) {
+  const t = (followupText || '').toLowerCase().trim();
+
+  // Use default
+  if (t.includes('default') || t.includes('use the default') || t === 'yes') {
+    const d = runtime.state.defaults.followup;
+    if (d.mode === 'once') return { followupEveryMin: null };
+    if (d.mode === 'repeat') {
+      return {
+        followupEveryMin: d.everyMin ?? 15,
+        followupMaxCount: d.maxCount ?? null,
+        followupQuietHours: d.quietHours ?? { start: 23, end: 7 }
+      };
+    }
+    // mode=ask fallback
+    return { followupEveryMin: d.everyMin ?? 15 };
+  }
+
+  // Just once
+  if (t.includes('just once') || (t.includes('once') && !t.includes('every'))) return { followupEveryMin: null };
+
+  // Parse "every 15 minutes"
+  const m = t.match(/every\s+(\d+)\s*(min|mins|minute|minutes)/);
   if (m) return { followupEveryMin: Number(m[1]) };
+
+  // Parse "repeat" without number
+  if (t.includes('repeat')) return { followupEveryMin: runtime.state.defaults.followup.everyMin ?? 15 };
+
+  // Fallback to default repeat interval
   return { followupEveryMin: runtime.state.defaults.followup.everyMin ?? 15 };
 }
 
@@ -78,11 +102,38 @@ async function say(text) {
   await playWav({ wavPath: out, cmd: DEFAULTS.playbackCommand });
 }
 
+async function listenForAck({ secondsMax = 3 }) {
+  const wavPath = path.join(DATA_DIR, 'ack.wav');
+  try {
+    await recordToWav({
+      outPath: wavPath,
+      sampleRateHertz: DEFAULTS.sampleRateHertz,
+      device: DEFAULTS.recordingDevice,
+      secondsMax
+    });
+    const text = await whisperTranscribe({ baseUrl, apiKeyEnv, audioPath: wavPath, model: DEFAULTS.whisperModel });
+    return (text || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function isAck(text) {
+  return /\b(yes|yeah|yep|done|did it|i did|completed)\b/i.test(text);
+}
+
 async function notify(reminder, meta) {
-  if (meta.kind === 'due') {
-    await say(`Reminder: ${reminder.text}. Did you do it?`);
-  } else {
-    await say(`Did you do it yet? ${reminder.text}`);
+  const prompt = meta.kind === 'due'
+    ? `Reminder: ${reminder.text}. Did you do it?`
+    : `Did you do it yet? ${reminder.text}`;
+
+  await say(prompt);
+
+  // After speaking, listen briefly for a yes/done response.
+  const heard = await listenForAck({ secondsMax: 3 });
+  if (isAck(heard)) {
+    engine.acknowledge(reminder.id);
+    await say("Awesome — I’ll take it off the list.");
   }
 }
 
@@ -97,15 +148,31 @@ async function oneTurn() {
   const text = await whisperTranscribe({ baseUrl, apiKeyEnv, audioPath: wavPath, model: DEFAULTS.whisperModel });
   console.log('Heard:', text);
 
+  // Allow quick global default setting by voice.
+  // Example: "set default followups every 15 minutes" or "set default followups once"
+  if (/^set default followups?/i.test(text.trim())) {
+    const t = text.toLowerCase();
+    if (t.includes('once')) {
+      runtime.state.defaults.followup.mode = 'once';
+    } else {
+      const m = t.match(/every\s+(\d+)\s*(min|mins|minute|minutes)/);
+      runtime.state.defaults.followup.mode = 'repeat';
+      if (m) runtime.state.defaults.followup.everyMin = Number(m[1]);
+    }
+    saveJson(defaultsPath, runtime.state.defaults);
+    await say('Okay — default follow-ups updated.');
+    return;
+  }
+
   const result = await handleUtterance({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, text, state: runtime.state });
   runtime.state = result.state ?? runtime.state;
 
   // If we just collected a full reminder
-  if (result.intent === 'set_repeat' && runtime.state.collected) {
-    const { reminderText, timeText, repeatText } = runtime.state.collected;
+  if (result.intent === 'set_followup' && runtime.state.collected) {
+    const { reminderText, timeText, followupText } = runtime.state.collected;
     const dueAtIso = parseDue(timeText);
-    const follow = parseRepeat(repeatText);
-    const r = engine.add({ id: newId(), text: reminderText, dueAtIso, ...follow });
+    const follow = parseFollowup(followupText);
+    engine.add({ id: newId(), text: reminderText, dueAtIso, ...follow });
     runtime.state.collected = null;
     await say(`Okay. I'll remind you at ${timeText}.`);
     return;
