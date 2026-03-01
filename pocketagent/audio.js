@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 
-export async function recordToWav({ outPath, sampleRateHertz = 16000, device = null, secondsMax = 20 }) {
-  // Uses arecord (ALSA). Hold-to-talk can be implemented by stopping the process.
-  // WAV container, 16-bit LE, mono.
+export async function recordToWav({ outPath, sampleRateHertz = 16000, device = null, secondsMax = 20, abortSignal = null }) {
+  // Uses arecord (ALSA). WAV container, 16-bit LE, mono.
+  // If abortSignal is provided, recording stops on abort (push-to-talk release).
   return new Promise((resolve, reject) => {
     const args = [
       '-q',
@@ -23,18 +23,28 @@ export async function recordToWav({ outPath, sampleRateHertz = 16000, device = n
       try { proc.kill('SIGINT'); } catch {}
     }, secondsMax * 1000);
 
+    let aborted = false;
+    const onAbort = () => {
+      aborted = true;
+      try { proc.kill('SIGINT'); } catch {}
+    };
+    if (abortSignal) {
+      if (abortSignal.aborted) onAbort();
+      else abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
+
     proc.on('error', (err) => {
       clearTimeout(timeout);
+      if (abortSignal) abortSignal.removeEventListener?.('abort', onAbort);
       reject(err);
     });
     proc.on('close', (code) => {
       clearTimeout(timeout);
-      if (code === 0 || code === 130) return resolve({ outPath });
+      if (abortSignal) abortSignal.removeEventListener?.('abort', onAbort);
+      if (aborted) return resolve({ outPath, aborted: true });
+      if (code === 0 || code === 130) return resolve({ outPath, aborted: false });
       reject(new Error(`arecord failed (code ${code}): ${stderr}`));
     });
-
-    // Caller can stop by sending SIGINT to the child process by deleting file? Instead expose proc? For v1,
-    // we rely on the timeout and manual SIGINT not wired yet.
   });
 }
 

@@ -8,12 +8,13 @@ import { handleUtterance } from './agent.js';
 import { loadJson, saveJson } from './store.js';
 import { answerReminderQuery, selectRemindersForQuery } from './query.js';
 import { setVolumePercent } from './volume.js';
+import { startButtonWatcher } from './gpio_button.js';
 
 const DATA_DIR = process.env.POCKETAGENT_DATA_DIR || './data';
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const defaultsPath = DEFAULTS.defaultsFile;
-const remindersPath = DEFAULTS.remindersDbFile;
+const defaultsPath = process.env.POCKETAGENT_DEFAULTS_FILE || path.join(DATA_DIR, 'defaults.json');
+const remindersPath = process.env.POCKETAGENT_REMINDERS_DB || path.join(DATA_DIR, 'reminders.json');
 
 const baseUrl = DEFAULTS.openaiBaseUrl;
 const apiKeyEnv = DEFAULTS.openaiApiKeyEnv;
@@ -132,10 +133,10 @@ async function notify(reminder, meta) {
 const engine = new ReminderEngine({ dbFile: remindersPath, timezone: runtime.state.defaults.timezone });
 engine.start(async (r, meta) => notify(r, meta));
 
-async function oneTurn() {
+async function oneTurn({ abortSignal = null } = {}) {
   const wavPath = path.join(DATA_DIR, 'input.wav');
   await say('Hold the button and speak.');
-  await recordToWav({ outPath: wavPath, sampleRateHertz: DEFAULTS.sampleRateHertz, device: DEFAULTS.recordingDevice, secondsMax: 8 });
+  await recordToWav({ outPath: wavPath, sampleRateHertz: DEFAULTS.sampleRateHertz, device: DEFAULTS.recordingDevice, secondsMax: 8, abortSignal });
 
   const text = await whisperTranscribe({ baseUrl, apiKeyEnv, audioPath: wavPath, model: DEFAULTS.whisperModel });
   console.log('Heard:', text);
@@ -212,14 +213,43 @@ async function oneTurn() {
   await say(result.say || 'Okay.');
 }
 
-// V1: loop on stdin ENTER to simulate button press.
-console.log('PocketAgent running. Press ENTER to simulate hold-to-talk.');
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', async () => {
+const PTT_MODE = (process.env.POCKETAGENT_PTT_MODE || 'gpio').toLowerCase();
+
+async function safeOneTurn(abortSignal = null) {
   try {
-    await oneTurn();
+    await oneTurn({ abortSignal });
   } catch (e) {
     console.error(e);
     try { await say('Something went wrong. Check the logs.'); } catch {}
   }
-});
+}
+
+if (PTT_MODE === 'stdin') {
+  // Dev mode: press ENTER to simulate a button press.
+  console.log('PocketAgent running. Press ENTER to simulate hold-to-talk.');
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', async () => safeOneTurn(null));
+} else {
+  // Hardware mode: use ULTRA++ button on GPIO23 by default.
+  console.log('PocketAgent running. Waiting for push-to-talk button.');
+
+  let inTurn = false;
+  let controller = null;
+
+  const watcher = startButtonWatcher();
+  watcher
+    .onPress(() => {
+      if (inTurn) return;
+      inTurn = true;
+      controller = new AbortController();
+      // Start recording immediately; stop when release aborts.
+      void safeOneTurn(controller.signal).finally(() => {
+        inTurn = false;
+        controller = null;
+      });
+    })
+    .onRelease(() => {
+      // Stop recording when user releases button.
+      try { controller?.abort(); } catch {}
+    });
+}

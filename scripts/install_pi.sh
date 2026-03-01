@@ -11,7 +11,8 @@ apt-get update
 apt-get install -y --no-install-recommends \
   git \
   ca-certificates \
-  alsa-utils
+  alsa-utils \
+  gpiod
 
 # Node.js: assume already installed OR install via NodeSource if needed.
 if ! command -v node >/dev/null 2>&1; then

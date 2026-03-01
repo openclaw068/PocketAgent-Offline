@@ -1,0 +1,5 @@
+node_modules/
+data/
+*.wav
+.env
+.DS_Store

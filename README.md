@@ -13,7 +13,14 @@ This repo contains a working skeleton:
 - TTS via OpenAI Audio Speech
 - Local reminder scheduler with follow-ups
 - After each spoken reminder, it listens briefly for a “yes/done” to auto-clear
-- **Button is currently simulated by pressing ENTER** (GPIO wiring next)
+- **Push-to-talk button supported via `gpiomon` (libgpiod)** (defaults to ULTRA++ button on GPIO23)
+
+### Push-to-talk configuration
+By default PocketAgent uses GPIO push-to-talk.
+- `POCKETAGENT_PTT_MODE=gpio` (default)
+- `POCKETAGENT_PTT_GPIO_LINE=23` (ULTRA++ button)
+- `POCKETAGENT_GPIO_CHIP=gpiochip0`
+- If you want dev mode: `POCKETAGENT_PTT_MODE=stdin` (press ENTER)
 
 ## Requirements
 - Raspberry Pi OS
