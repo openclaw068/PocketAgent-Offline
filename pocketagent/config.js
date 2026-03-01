@@ -4,6 +4,7 @@ export const DEFAULTS = {
   sampleRateHertz: 16000,
   recordingDevice: process.env.POCKETAGENT_RECORDING_DEVICE || null,
   playbackCommand: process.env.POCKETAGENT_PLAYBACK_CMD || 'aplay',
+  playbackDevice: process.env.POCKETAGENT_PLAYBACK_DEVICE || null, // e.g. plughw:1,0
 
   // OpenAI
   openaiApiKeyEnv: 'OPENAI_API_KEY',

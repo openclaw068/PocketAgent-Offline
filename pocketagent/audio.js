@@ -48,10 +48,13 @@ export async function recordToWav({ outPath, sampleRateHertz = 16000, device = n
   });
 }
 
-export async function playWav({ wavPath, cmd = 'aplay' }) {
+export async function playWav({ wavPath, cmd = 'aplay', device = null }) {
   if (!fs.existsSync(wavPath)) throw new Error(`Missing wav file: ${wavPath}`);
   return new Promise((resolve, reject) => {
-    const proc = spawn(cmd, [wavPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const args = [];
+    if (device) args.push('-D', device);
+    args.push(wavPath);
+    const proc = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     proc.stderr.on('data', (d) => (stderr += d.toString()));
     proc.on('error', reject);

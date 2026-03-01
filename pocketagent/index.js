@@ -92,7 +92,7 @@ async function say(text) {
   });
   const out = path.join(DATA_DIR, 'tts.wav');
   fs.writeFileSync(out, wav);
-  await playWav({ wavPath: out, cmd: DEFAULTS.playbackCommand });
+  await playWav({ wavPath: out, cmd: DEFAULTS.playbackCommand, device: DEFAULTS.playbackDevice });
 }
 
 async function listenForAck({ secondsMax = 5 }) {
