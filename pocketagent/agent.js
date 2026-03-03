@@ -119,10 +119,22 @@ export async function handleUtterance({ baseUrl, apiKeyEnv, model, text, state }
   }
 
   function looksLikeTime(text) {
-    const s = text.trim().toLowerCase();
+    let s = text.trim().toLowerCase();
     if (!s) return false;
-    // Accept patterns like: "7am", "7:30am", "tomorrow 7am"
-    return /^(tomorrow\s+)?\d{1,2}(?::\d{2})?\s*(am|pm)?$/.test(s);
+
+    // normalize common spoken variants:
+    // "a.m."/"p.m." -> "am"/"pm", remove periods, collapse whitespace
+    s = s
+      .replace(/\b([ap])\s*\.?\s*m\.?\b/g, (_, ap) => `${ap}m`)
+      .replace(/\./g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Accept patterns like:
+    // - "7am", "7 am", "7 a.m."
+    // - "7:30pm", "7:30 pm"
+    // - "tomorrow 7am" or "tomorrow at 7am"
+    return /^(tomorrow\s+)?(at\s+)?\d{1,2}(?::\d{2})?\s*(am|pm)?$/.test(s);
   }
 
   // Mid-flow: ask for time
