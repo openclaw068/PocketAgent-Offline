@@ -93,19 +93,44 @@ function followupFromSpec(spec) {
   };
 }
 
+function normalizeTimeText(s) {
+  return String(s || '')
+    .trim()
+    // normalize punctuation variants: "a.m." -> "am", "p.m." -> "pm"
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, (_, ap) => `${ap.toLowerCase()}m`)
+    // drop leftover periods ("a.m."/"p.m." variants)
+    .replace(/\./g, '')
+    // collapse whitespace
+    .replace(/\s+/g, ' ')
+    // strip common filler words
+    .replace(/^at\s+/i, '')
+    .trim();
+}
+
 function parseDue(timeText) {
-  // V1: interpret "8am" as next occurrence today/tomorrow in local time.
+  // V1: interpret common short phrases as next occurrence today/tomorrow in local time.
   // For now we use system time. On Pi, set timezone properly.
   const now = new Date();
-  const m = timeText.trim().match(/^(tomorrow\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  const t = normalizeTimeText(timeText);
+
+  // Accept:
+  // - "7am", "7 am", "7 a.m.";
+  // - "7:30pm", "7:30 pm";
+  // - optional "tomorrow" prefix;
+  // - optional "at" prefix.
+  const m = t.match(/^(tomorrow\s+)?(at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
   if (!m) {
     // fallback: 1 minute from now
     return new Date(Date.now() + 60_000).toISOString();
   }
+
   const isTomorrow = !!m[1];
-  let hh = Number(m[2]);
-  const mm = m[3] ? Number(m[3]) : 0;
-  const ap = m[4]?.toLowerCase();
+  let hh = Number(m[3]);
+  const mm = m[4] ? Number(m[4]) : 0;
+  const ap = m[5]?.toLowerCase();
+
+  // If no am/pm given, assume next occurrence in the future (24h clock-ish behavior)
+  // (e.g. "7" at 6pm -> tomorrow 7:00; at 6am -> today 7:00)
   if (ap === 'pm' && hh < 12) hh += 12;
   if (ap === 'am' && hh === 12) hh = 0;
 

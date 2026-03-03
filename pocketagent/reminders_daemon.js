@@ -84,15 +84,28 @@ function followupFromDefaults(spec, defaults) {
   };
 }
 
+function normalizeTimeText(s) {
+  return String(s || '')
+    .trim()
+    .replace(/\b([ap])\s*\.?\s*m\.?\b/gi, (_, ap) => `${ap.toLowerCase()}m`)
+    .replace(/\./g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^at\s+/i, '')
+    .trim();
+}
+
 function parseDue(timeText) {
   const now = new Date();
-  const m = (timeText || '').trim().match(/^(tomorrow\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+  const t = normalizeTimeText(timeText);
+
+  const m = t.match(/^(tomorrow\s+)?(at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
   if (!m) return new Date(Date.now() + 60_000).toISOString();
 
   const isTomorrow = !!m[1];
-  let hh = Number(m[2]);
-  const mm = m[3] ? Number(m[3]) : 0;
-  const ap = m[4]?.toLowerCase();
+  let hh = Number(m[3]);
+  const mm = m[4] ? Number(m[4]) : 0;
+  const ap = m[5]?.toLowerCase();
+
   if (ap === 'pm' && hh < 12) hh += 12;
   if (ap === 'am' && hh === 12) hh = 0;
 
