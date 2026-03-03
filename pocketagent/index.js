@@ -162,6 +162,9 @@ async function oneTurn({ abortSignal = null } = {}) {
   const wavPath = path.join(DATA_DIR, 'input.wav');
   await say('Hold the button and speak.');
 
+  // Ensure we never accidentally reuse a stale recording if arecord fails to create the file.
+  try { fs.unlinkSync(wavPath); } catch {}
+
   const rec = await recordToWav({
     outPath: wavPath,
     sampleRateHertz: DEFAULTS.sampleRateHertz,
@@ -169,6 +172,13 @@ async function oneTurn({ abortSignal = null } = {}) {
     secondsMax: 8,
     abortSignal
   });
+
+  try {
+    const st = fs.statSync(wavPath);
+    console.log('[PocketAgent] recorded bytes:', st.size, 'aborted=', !!rec?.aborted);
+  } catch {
+    console.log('[PocketAgent] recorded bytes: <missing>', 'aborted=', !!rec?.aborted);
+  }
 
   // If the user released immediately, arecord exits (often code 130) and we may have
   // no file. Avoid crashing on ENOENT.
