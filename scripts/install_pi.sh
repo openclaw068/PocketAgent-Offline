@@ -13,7 +13,8 @@ apt-get install -y --no-install-recommends \
   git \
   ca-certificates \
   alsa-utils \
-  gpiod
+  gpiod \
+  libgpiod2
 
 # Node.js: assume already installed OR install via NodeSource if needed.
 if ! command -v node >/dev/null 2>&1; then
@@ -35,6 +36,15 @@ cd "$APP_DIR"
 npm ci || npm install
 
 mkdir -p "$APP_DIR/data"
+
+# Sanity checks: required CLI tools
+for bin in node npm arecord aplay alsamixer gpiomon; do
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    echo "Missing required tool: $bin"
+    echo "Fix: sudo apt-get update && sudo apt-get install -y alsa-utils gpiod"
+    exit 1
+  fi
+done
 
 # Ensure service user can access audio + gpio
 usermod -aG audio,gpio "$USER_NAME" || true

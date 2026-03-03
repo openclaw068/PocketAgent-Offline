@@ -269,6 +269,29 @@ async function safeOneTurn(abortSignal = null) {
   }
 }
 
+function logConfig() {
+  const sttModel = DEFAULTS.whisperModel;
+  const chatModel = DEFAULTS.chatModel;
+  const ttsModel = DEFAULTS.ttsModel;
+  console.log('[PocketAgent] mode:', PTT_MODE);
+  console.log('[PocketAgent] models:', { stt: sttModel, chat: chatModel, tts: ttsModel, voice: DEFAULTS.ttsVoice });
+  console.log('[PocketAgent] audio:', {
+    sampleRateHertz: DEFAULTS.sampleRateHertz,
+    recordingDevice: DEFAULTS.recordingDevice,
+    playbackCommand: DEFAULTS.playbackCommand,
+    playbackDevice: DEFAULTS.playbackDevice
+  });
+  if (PTT_MODE !== 'stdin') {
+    console.log('[PocketAgent] gpio:', {
+      chip: process.env.POCKETAGENT_GPIO_CHIP || 'gpiochip0',
+      line: Number(process.env.POCKETAGENT_PTT_GPIO_LINE ?? 23),
+      activeLow: (process.env.POCKETAGENT_PTT_ACTIVE_LOW ?? 'true')
+    });
+  }
+}
+
+logConfig();
+
 if (PTT_MODE === 'stdin') {
   // Dev mode: press ENTER to simulate a button press.
   console.log('PocketAgent running. Press ENTER to simulate hold-to-talk.');
@@ -289,8 +312,11 @@ if (PTT_MODE === 'stdin') {
       controller = new AbortController();
       // Start recording immediately; stop when release aborts.
       void safeOneTurn(controller.signal).finally(() => {
-        inTurn = false;
-        controller = null;
+        // Small cooldown reduces edge-chatter / accidental immediate retriggers
+        setTimeout(() => {
+          inTurn = false;
+          controller = null;
+        }, Number(process.env.POCKETAGENT_PTT_COOLDOWN_MS ?? 200));
       });
     })
     .onRelease(() => {
