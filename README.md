@@ -112,6 +112,9 @@ POCKETAGENT_PTT_ACTIVE_LOW=true
 # Make it feel conversational: auto-listen after questions (no 2nd button press)
 POCKETAGENT_AUTO_LISTEN_ON_PROMPTS=true
 POCKETAGENT_AUTO_LISTEN_SECONDS=6
+# If capture fails right after playback, increase delay and/or enable retries
+POCKETAGENT_AUTO_LISTEN_DELAY_MS=800
+POCKETAGENT_AUTO_LISTEN_RECORD_RETRIES=4
 
 sudo systemctl start pocketagent
 sudo journalctl -u pocketagent -f

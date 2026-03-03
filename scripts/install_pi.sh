@@ -74,6 +74,8 @@ cat >/etc/default/pocketagent <<'EOF'
 # Conversation mode (hands-free replies after questions):
 # POCKETAGENT_AUTO_LISTEN_ON_PROMPTS=true
 # POCKETAGENT_AUTO_LISTEN_SECONDS=6
+# POCKETAGENT_AUTO_LISTEN_DELAY_MS=800
+# POCKETAGENT_AUTO_LISTEN_RECORD_RETRIES=4
 EOF
 
 chown root:root /etc/default/pocketagent
