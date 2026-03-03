@@ -246,15 +246,24 @@ async function oneTurn({ abortSignal = null } = {}) {
 
   async function autoListenOnce() {
     const secondsMax = Number(process.env.POCKETAGENT_AUTO_LISTEN_SECONDS ?? 6);
+    const delayMs = Number(process.env.POCKETAGENT_AUTO_LISTEN_DELAY_MS ?? 250);
     const wavPath2 = path.join(DATA_DIR, 'input.wav');
     try { fs.unlinkSync(wavPath2); } catch {}
 
-    await recordToWav({
-      outPath: wavPath2,
-      sampleRateHertz: DEFAULTS.sampleRateHertz,
-      device: DEFAULTS.recordingDevice,
-      secondsMax
-    });
+    // Give ALSA a moment to settle after playback before opening the capture device.
+    if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
+
+    try {
+      await recordToWav({
+        outPath: wavPath2,
+        sampleRateHertz: DEFAULTS.sampleRateHertz,
+        device: DEFAULTS.recordingDevice,
+        secondsMax
+      });
+    } catch (e) {
+      console.error('[PocketAgent] auto-listen record failed:', e?.message ?? e);
+      return '';
+    }
 
     if (!fs.existsSync(wavPath2)) return '';
 
