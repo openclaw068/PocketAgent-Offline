@@ -269,6 +269,29 @@ async function oneTurn({ abortSignal = null } = {}) {
     saveChatHistory(last10, runtime.state.chat.sessionId);
 
     await say(assistantText || 'Okay.');
+
+    // Optional: auto-listen for back-and-forth chat without another button press.
+    // This can be flaky on some ALSA stacks; use delay+retries knobs.
+    const chatAuto = (process.env.POCKETAGENT_CHAT_AUTO_LISTEN ?? 'false').toLowerCase() === 'true';
+    if (chatAuto) {
+      const maxTurns = Number(process.env.POCKETAGENT_CHAT_AUTO_LISTEN_MAX_TURNS ?? 2);
+      for (let i = 0; i < maxTurns; i++) {
+        const text2 = await autoListenOnce();
+        if (!text2) break;
+
+        runtime.state.chat.messages.push({ role: 'user', content: text2 });
+        const messages2 = [{ role: 'system', content: systemPrompt }, ...runtime.state.chat.messages];
+        const reply2 = await openaiChat({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, messages: messages2 });
+        const assistantText2 = (reply2 || '').trim();
+        runtime.state.chat.messages.push({ role: 'assistant', content: assistantText2 });
+
+        const last10b = runtime.state.chat.messages.slice(-DEFAULTS.chatCarryoverCount);
+        saveChatHistory(last10b, runtime.state.chat.sessionId);
+
+        await say(assistantText2 || 'Okay.');
+      }
+    }
+
     return;
   }
 

@@ -26,6 +26,19 @@ Set with:
 
 Chat mode keeps full conversation memory for the current run, and on restart it carries over the last N messages (default 10) from the previous run.
 
+### Hands-free chat (optional)
+By default chat mode is **press-to-talk per turn**.
+
+To enable hands-free back-and-forth (auto-listen after each assistant reply):
+```bash
+POCKETAGENT_CHAT_AUTO_LISTEN=true
+POCKETAGENT_CHAT_AUTO_LISTEN_MAX_TURNS=2
+
+# Tuning knobs for ALSA stacks that are briefly busy right after playback:
+POCKETAGENT_AUTO_LISTEN_DELAY_MS=800
+POCKETAGENT_AUTO_LISTEN_RECORD_RETRIES=8
+```
+
 ### Push-to-talk configuration
 By default PocketAgent uses GPIO push-to-talk.
 - `POCKETAGENT_PTT_MODE=gpio` (default)
