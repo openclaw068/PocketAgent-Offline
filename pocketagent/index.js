@@ -3,7 +3,8 @@ import path from 'node:path';
 import { DEFAULTS } from './config.js';
 import { recordToWav, playWav } from './audio.js';
 import { whisperTranscribe, ttsToAudio, chat as openaiChat } from './openai.js';
-import { ReminderEngine, newId } from './reminders.js';
+import http from 'node:http';
+
 import { handleUtterance } from './agent.js';
 import { loadJson, saveJson } from './store.js';
 // (openaiChat is imported above with whisperTranscribe/ttsToAudio)
@@ -173,69 +174,190 @@ function isAck(text) {
   return /\b(yes|yeah|yep|done|did it|i did|completed)\b/i.test(text);
 }
 
-async function notify(reminder, meta) {
+async function notifyAndMaybeAck({ id, text, kind }) {
   // Track which reminder we most recently spoke, so "done" can clear the right one.
-  runtime.state.lastNotifiedReminderId = reminder.id;
+  runtime.state.lastNotifiedReminderId = id;
 
-  const prompt = meta.kind === 'due'
-    ? `Reminder: ${reminder.text}. Did you do it?`
-    : `Did you do it yet? ${reminder.text}`;
+  const prompt = kind === 'due'
+    ? `Reminder: ${text}. Did you do it?`
+    : `Did you do it yet? ${text}`;
 
   await say(prompt);
 
   // After speaking, listen briefly for a yes/done response.
   const heard = await listenForAck({ secondsMax: 5 });
   if (isAck(heard)) {
-    engine.acknowledge(reminder.id);
+    await remindersPost('/reminders/ack', { id });
     await say("Awesome — I’ll take it off the list.");
   }
 }
 
-// Reminders engine is only used in reminders mode.
-const engine = new ReminderEngine({ dbFile: remindersPath, timezone: runtime.state.defaults.timezone });
-if (DEFAULTS.mode !== 'chat') {
-  engine.start(async (r, meta) => notify(r, meta));
-} else {
-  // In chat mode, bootstrap conversation memory.
+// Reminders run in a separate daemon (see reminders_daemon.js). The chat agent only
+// receives notify callbacks.
+if (DEFAULTS.mode === 'chat') {
   bootstrapChatSession();
 }
 
-async function oneTurn({ abortSignal = null } = {}) {
-  const wavPath = path.join(DATA_DIR, 'input.wav');
+const REMINDERS_HOST = process.env.POCKETAGENT_REMINDERS_HOST || '127.0.0.1';
+const REMINDERS_PORT = Number(process.env.POCKETAGENT_REMINDERS_PORT || 3791);
 
-  if ((process.env.POCKETAGENT_PROMPT_ON_PRESS ?? 'true').toLowerCase() === 'true') {
-    await say('Hold the button and speak.');
+const NOTIFY_HOST = process.env.POCKETAGENT_NOTIFY_HOST || '127.0.0.1';
+const NOTIFY_PORT = Number(process.env.POCKETAGENT_NOTIFY_PORT || 3781);
+
+let busy = false;
+const notifyQueue = [];
+
+function remindersReqOptions(pathname, method, bodyBuf = null) {
+  const headers = bodyBuf
+    ? { 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': bodyBuf.length }
+    : {};
+  return {
+    method,
+    hostname: REMINDERS_HOST,
+    port: REMINDERS_PORT,
+    path: pathname,
+    headers,
+    timeout: 10_000
+  };
+}
+
+async function remindersGet(pathname) {
+  return await new Promise((resolve, reject) => {
+    const req = http.request(remindersReqOptions(pathname, 'GET'), res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        try {
+          resolve({ status: res.statusCode, json: JSON.parse(raw) });
+        } catch {
+          resolve({ status: res.statusCode, json: null, raw });
+        }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('reminders GET timeout')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function remindersPost(pathname, payload) {
+  const bodyBuf = Buffer.from(JSON.stringify(payload ?? {}));
+  return await new Promise((resolve, reject) => {
+    const req = http.request(remindersReqOptions(pathname, 'POST', bodyBuf), res => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        try {
+          resolve({ status: res.statusCode, json: JSON.parse(raw) });
+        } catch {
+          resolve({ status: res.statusCode, json: null, raw });
+        }
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('reminders POST timeout')));
+    req.on('error', reject);
+    req.write(bodyBuf);
+    req.end();
+  });
+}
+
+async function drainNotifyQueue() {
+  if (busy) return;
+  if (!notifyQueue.length) return;
+  busy = true;
+  try {
+    while (notifyQueue.length) {
+      const ev = notifyQueue.shift();
+      await notifyAndMaybeAck(ev);
+    }
+  } finally {
+    busy = false;
   }
+}
 
-  // Ensure we never accidentally reuse a stale recording if arecord fails to create the file.
-  try { fs.unlinkSync(wavPath); } catch {}
+function startNotifyServer() {
+  const server = http.createServer(async (req, res) => {
+    try {
+      const u = new URL(req.url, `http://${req.headers.host}`);
 
-  const rec = await recordToWav({
-    outPath: wavPath,
-    sampleRateHertz: DEFAULTS.sampleRateHertz,
-    channels: DEFAULTS.recordingChannels,
-    device: DEFAULTS.recordingDevice,
-    secondsMax: 8,
-    abortSignal
+      if (req.method === 'GET' && u.pathname === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
+      if (req.method === 'POST' && u.pathname === '/notify') {
+        const chunks = [];
+        for await (const c of req) chunks.push(c);
+        const raw = Buffer.concat(chunks).toString('utf8').trim();
+        const body = raw ? JSON.parse(raw) : {};
+
+        // Enqueue and only speak when idle.
+        notifyQueue.push({ id: body.id, text: body.text, kind: body.kind });
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, queued: notifyQueue.length }));
+
+        // If idle, drain immediately.
+        void drainNotifyQueue();
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'not found' }));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: e?.message ?? String(e) }));
+    }
   });
 
+  server.listen(NOTIFY_PORT, NOTIFY_HOST, () => {
+    console.log('[PocketAgent] notify server listening:', { host: NOTIFY_HOST, port: NOTIFY_PORT });
+  });
+}
+
+startNotifyServer();
+
+async function oneTurn({ abortSignal = null } = {}) {
+  busy = true;
   try {
-    const st = fs.statSync(wavPath);
-    console.log('[PocketAgent] recorded bytes:', st.size, 'aborted=', !!rec?.aborted);
-  } catch {
-    console.log('[PocketAgent] recorded bytes: <missing>', 'aborted=', !!rec?.aborted);
-  }
+    const wavPath = path.join(DATA_DIR, 'input.wav');
 
-  if (rec?.aborted && !fs.existsSync(wavPath)) {
-    console.log('Recording aborted before audio was written; ignoring.');
-    return;
-  }
+    if ((process.env.POCKETAGENT_PROMPT_ON_PRESS ?? 'true').toLowerCase() === 'true') {
+      await say('Hold the button and speak.');
+    }
 
-  if (!fs.existsSync(wavPath)) {
-    console.error('Missing recorded audio file:', wavPath);
-    await say('I did not capture any audio. Try holding the button a bit longer.');
-    return;
-  }
+    // Ensure we never accidentally reuse a stale recording if arecord fails to create the file.
+    try { fs.unlinkSync(wavPath); } catch {}
+
+    const rec = await recordToWav({
+      outPath: wavPath,
+      sampleRateHertz: DEFAULTS.sampleRateHertz,
+      channels: DEFAULTS.recordingChannels,
+      device: DEFAULTS.recordingDevice,
+      secondsMax: 8,
+      abortSignal
+    });
+
+    try {
+      const st = fs.statSync(wavPath);
+      console.log('[PocketAgent] recorded bytes:', st.size, 'aborted=', !!rec?.aborted);
+    } catch {
+      console.log('[PocketAgent] recorded bytes: <missing>', 'aborted=', !!rec?.aborted);
+    }
+
+    if (rec?.aborted && !fs.existsSync(wavPath)) {
+      console.log('Recording aborted before audio was written; ignoring.');
+      return;
+    }
+
+    if (!fs.existsSync(wavPath)) {
+      console.error('Missing recorded audio file:', wavPath);
+      await say('I did not capture any audio. Try holding the button a bit longer.');
+      return;
+    }
 
   const text = await whisperTranscribe({
     baseUrl,
@@ -248,15 +370,113 @@ async function oneTurn({ abortSignal = null } = {}) {
   });
   console.log('Heard:', text);
 
-  // CHAT MODE: act like a neutral voice assistant with conversation memory.
+  // CHAT MODE: general voice assistant + reminder control.
+  // In chat mode we still allow reminder actions (create/list/ack/etc) by running the
+  // reminders state machine first and only falling back to open-ended chat if it
+  // wasn’t a reminder-related request.
   if (DEFAULTS.mode === 'chat') {
-    // Append user message
+    // First: try reminders state machine
+    const r1 = await handleUtterance({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, text, state: runtime.state });
+    runtime.state = r1.state ?? runtime.state;
+
+    // If it looks like a reminders intent, execute it here.
+    if (r1?.intent && r1.intent !== 'unknown') {
+      // Handle defaults updates
+      if (r1.intent === 'update_defaults' && r1.defaultsPatch) {
+        const p = r1.defaultsPatch;
+        runtime.state.defaults.followup.mode = p.mode === 'once' ? 'once' : 'repeat';
+        if (runtime.state.defaults.followup.mode === 'repeat') {
+          if (p.everyMin != null) runtime.state.defaults.followup.everyMin = Number(p.everyMin);
+          runtime.state.defaults.followup.maxCount = p.maxCount ?? null;
+          if (p.quietHours) runtime.state.defaults.followup.quietHours = p.quietHours;
+        } else {
+          runtime.state.defaults.followup.maxCount = null;
+        }
+        saveJson(defaultsPath, runtime.state.defaults);
+      }
+
+      // If we just collected a full reminder
+      if (r1.intent === 'set_followup' && runtime.state.collected) {
+        const { reminderText, timeText, followupSpec } = runtime.state.collected;
+        runtime.state.collected = null;
+        const r = await remindersPost('/reminders/add', { reminderText, timeText, followupSpec });
+        if (r?.json?.ok) {
+          await say(`Perfect — I’ll remind you at ${timeText}.`);
+        } else {
+          await say('I had trouble saving that reminder. Check the logs.');
+        }
+        return;
+      }
+
+      // Ack latest reminder (from notification context)
+      if (r1.intent === 'ack_latest') {
+        const id = runtime.state.lastNotifiedReminderId;
+        if (id) await remindersPost('/reminders/ack', { id });
+        if (r1.say) {
+          await say(r1.say);
+        }
+        return;
+      }
+
+      // Query reminders (list/what’s next/etc)
+      if (r1.intent === 'query_reminders') {
+        const all = await remindersGet('/reminders/all');
+        const reminders = all?.json?.reminders || [];
+
+        const engineLike = {
+          listAll: () => reminders,
+          listOpen: () => reminders.filter(r => r.status === 'open'),
+          listByDateRange: ({ startIso, endIso, status = null }) => {
+            const start = startIso ? new Date(startIso).getTime() : -Infinity;
+            const end = endIso ? new Date(endIso).getTime() : Infinity;
+            return reminders
+              .filter(r => {
+                const t = new Date(r.dueAtIso).getTime();
+                if (Number.isNaN(t)) return false;
+                if (t < start || t > end) return false;
+                if (status && r.status !== status) return false;
+                return true;
+              })
+              .sort((a, b) => new Date(a.dueAtIso) - new Date(b.dueAtIso));
+          }
+        };
+
+        const selected = selectRemindersForQuery(engineLike, r1.queryText);
+        const answer = await answerReminderQuery({
+          baseUrl,
+          apiKeyEnv,
+          model: DEFAULTS.chatModel,
+          queryText: r1.queryText,
+          reminders: selected
+        });
+        await say(answer);
+        return;
+      }
+
+      // Volume
+      if (r1.intent === 'set_volume') {
+        const pct = await setVolumePercent({
+          card: DEFAULTS.alsaCard,
+          control: DEFAULTS.alsaVolumeControl,
+          percent: r1.percent
+        });
+        await say(`Done — volume set to ${pct} percent.`);
+        return;
+      }
+
+      // Default: speak state machine response if provided
+      if (r1.say) {
+        await say(r1.say);
+        return;
+      }
+    }
+
+    // Otherwise: fall back to general chat with conversation memory.
     runtime.state.chat.messages.push({ role: 'user', content: text });
 
     const systemPrompt = (process.env.POCKETAGENT_CHAT_SYSTEM_PROMPT || '').trim() ||
       'You are a helpful, concise voice assistant. Keep replies short and conversational.';
 
-    // Build messages: system + full session
     const messages = [{ role: 'system', content: systemPrompt }, ...runtime.state.chat.messages];
 
     const reply = await openaiChat({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, messages });
@@ -264,14 +484,11 @@ async function oneTurn({ abortSignal = null } = {}) {
 
     runtime.state.chat.messages.push({ role: 'assistant', content: assistantText });
 
-    // Persist last N for next boot
     const last10 = runtime.state.chat.messages.slice(-DEFAULTS.chatCarryoverCount);
     saveChatHistory(last10, runtime.state.chat.sessionId);
 
     await say(assistantText || 'Okay.');
 
-    // Optional: auto-listen for back-and-forth chat without another button press.
-    // This can be flaky on some ALSA stacks; use delay+retries knobs.
     const chatAuto = (process.env.POCKETAGENT_CHAT_AUTO_LISTEN ?? 'false').toLowerCase() === 'true';
     if (chatAuto) {
       const maxTurns = Number(process.env.POCKETAGENT_CHAT_AUTO_LISTEN_MAX_TURNS ?? 2);
@@ -326,11 +543,13 @@ async function oneTurn({ abortSignal = null } = {}) {
   // If we just collected a full reminder
   if (result.intent === 'set_followup' && runtime.state.collected) {
     const { reminderText, timeText, followupSpec } = runtime.state.collected;
-    const dueAtIso = parseDue(timeText);
-    const follow = followupFromSpec(followupSpec);
-    engine.add({ id: newId(), text: reminderText, dueAtIso, ...follow });
+    const r = await remindersPost('/reminders/add', { reminderText, timeText, followupSpec });
     runtime.state.collected = null;
-    await say(`Perfect — I’ll remind you at ${timeText}.`);
+    if (r?.json?.ok) {
+      await say(`Perfect — I’ll remind you at ${timeText}.`);
+    } else {
+      await say('I had trouble saving that reminder. Check the logs.');
+    }
     return;
   }
 
@@ -417,17 +636,38 @@ async function oneTurn({ abortSignal = null } = {}) {
     }
   }
 
-  return;
-
   if (result.intent === 'ack_latest') {
     const id = runtime.state.lastNotifiedReminderId;
-    if (id) engine.acknowledge(id);
+    if (id) await remindersPost('/reminders/ack', { id });
     await say(result.say);
     return;
   }
 
   if (result.intent === 'query_reminders') {
-    const selected = selectRemindersForQuery(engine, result.queryText);
+    // Pull reminders from daemon and answer via LLM
+    const all = await remindersGet('/reminders/all');
+    const reminders = all?.json?.reminders || [];
+
+    // Minimal engine-like wrapper for selectRemindersForQuery() expectations
+    const engineLike = {
+      listAll: () => reminders,
+      listOpen: () => reminders.filter(r => r.status === 'open'),
+      listByDateRange: ({ startIso, endIso, status = null }) => {
+        const start = startIso ? new Date(startIso).getTime() : -Infinity;
+        const end = endIso ? new Date(endIso).getTime() : Infinity;
+        return reminders
+          .filter(r => {
+            const t = new Date(r.dueAtIso).getTime();
+            if (Number.isNaN(t)) return false;
+            if (t < start || t > end) return false;
+            if (status && r.status !== status) return false;
+            return true;
+          })
+          .sort((a, b) => new Date(a.dueAtIso) - new Date(b.dueAtIso));
+      }
+    };
+
+    const selected = selectRemindersForQuery(engineLike, result.queryText);
     const answer = await answerReminderQuery({
       baseUrl,
       apiKeyEnv,
@@ -450,6 +690,11 @@ async function oneTurn({ abortSignal = null } = {}) {
   }
 
   await say(result.say || 'Okay.');
+  } finally {
+    busy = false;
+    // If any reminders arrived while we were busy, speak them now.
+    void drainNotifyQueue();
+  }
 }
 
 const PTT_MODE = (process.env.POCKETAGENT_PTT_MODE || 'gpio').toLowerCase();

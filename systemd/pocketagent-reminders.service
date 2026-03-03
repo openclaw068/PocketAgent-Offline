@@ -1,0 +1,18 @@
+[Unit]
+Description=PocketAgent Reminders Daemon (scheduler + storage)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pocketagent
+Environment=NODE_ENV=production
+EnvironmentFile=-/etc/default/pocketagent
+ExecStart=/usr/bin/node /opt/pocketagent/pocketagent/reminders_daemon.js
+Restart=on-failure
+RestartSec=2
+User=pi
+Group=pi
+
+[Install]
+WantedBy=multi-user.target

@@ -10,6 +10,10 @@ Environment=NODE_ENV=production
 # Provide OPENAI_API_KEY via /etc/default/pocketagent or systemd drop-in
 EnvironmentFile=-/etc/default/pocketagent
 ExecStart=/usr/bin/node /opt/pocketagent/pocketagent/index.js
+
+# Let reminders be a separate service; the chat agent stays responsive.
+# (Port is configured via /etc/default/pocketagent)
+
 Restart=on-failure
 RestartSec=2
 User=pi

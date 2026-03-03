@@ -90,6 +90,16 @@ POCKETAGENT_PROMPT_ON_PRESS=false
 # Chat mode memory carryover (persist last N messages between restarts)
 POCKETAGENT_CHAT_CARRYOVER_COUNT=10
 
+# Reminders daemon (local)
+POCKETAGENT_REMINDERS_HOST=127.0.0.1
+POCKETAGENT_REMINDERS_PORT=3791
+
+# Chat agent local notify endpoint (reminders daemon POSTs here when due)
+POCKETAGENT_NOTIFY_HOST=127.0.0.1
+POCKETAGENT_NOTIFY_PORT=3781
+# If you change host/port, also set:
+# POCKETAGENT_NOTIFY_URL=http://127.0.0.1:3781/notify
+
 # Optional hands-free chat (can be flaky on some ALSA stacks):
 # POCKETAGENT_CHAT_AUTO_LISTEN=true
 # POCKETAGENT_CHAT_AUTO_LISTEN_MAX_TURNS=5
@@ -103,10 +113,12 @@ chmod 600 /etc/default/pocketagent
 
 chown -R "$USER_NAME":"$USER_NAME" "$APP_DIR"
 
-# systemd: template service with correct user/group
+# systemd: install services with correct user/group
 sed "s/^User=.*/User=${USER_NAME}/; s/^Group=.*/Group=${USER_NAME}/" systemd/pocketagent.service > /etc/systemd/system/pocketagent.service
+sed "s/^User=.*/User=${USER_NAME}/; s/^Group=.*/Group=${USER_NAME}/" systemd/pocketagent-reminders.service > /etc/systemd/system/pocketagent-reminders.service
 systemctl daemon-reload
 systemctl enable pocketagent
+systemctl enable pocketagent-reminders
 
 echo "\nInstall complete. Next:"
 echo "1) Create /etc/default/pocketagent with OPENAI_API_KEY=..."
