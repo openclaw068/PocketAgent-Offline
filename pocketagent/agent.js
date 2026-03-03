@@ -243,7 +243,13 @@ export async function handleUtterance({ baseUrl, apiKeyEnv, model, text, state }
   }
 
   // Reminder queries
-  if (/\b(what do i have|what's coming up|whats coming up|coming up today|today\b|tomorrow\b|yesterday\b|list reminders|my reminders)\b/i.test(t)) {
+  // Avoid triggering on standalone words like "tomorrow" inside reminder creation utterances.
+  const wantsList = /\b(list reminders|my reminders|show reminders)\b/i.test(t);
+  const wantsComingUp = /\b(what do i have|what\s*'?s coming up|whats coming up|coming up)\b/i.test(t);
+  const mentionsDayWord = /\b(today|tomorrow|yesterday)\b/i.test(t);
+  const hasQueryVerb = /\b(what|show|list|coming up|do i have)\b/i.test(t);
+
+  if (wantsList || wantsComingUp || (mentionsDayWord && hasQueryVerb)) {
     return { intent: 'query_reminders', queryText: t, say: `Let me check your reminders.`, state };
   }
 
