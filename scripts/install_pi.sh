@@ -69,5 +69,11 @@ systemctl enable pocketagent
 
 echo "\nInstall complete. Next:"
 echo "1) Create /etc/default/pocketagent with OPENAI_API_KEY=..."
-echo "2) sudo systemctl start pocketagent"
-echo "3) sudo journalctl -u pocketagent -f"
+echo "2) (WM8960/ULTRA++) Add: POCKETAGENT_RECORDING_DEVICE=plughw:1,0 and POCKETAGENT_PLAYBACK_DEVICE=plughw:1,0"
+echo "3) sudo systemctl start pocketagent"
+echo "4) sudo journalctl -u pocketagent -f"
+echo "\nIf you hear no sound but playback succeeds, run (on the Pi):"
+echo "  amixer -c 1 sset 'Left Output Mixer PCM' on"
+echo "  amixer -c 1 sset 'Right Output Mixer PCM' on"
+echo "  amixer -c 1 sset Speaker 127"
+echo "  sudo alsactl store"

@@ -43,11 +43,49 @@ Then reboot and verify:
 ```bash
 aplay -l
 arecord -l
-arecord -f cd -d5 test.wav
-aplay test.wav
 ```
 
-In `alsamixer`, press `F6` and select the WM8960 card to adjust volumes/inputs.
+### If `arecord` / `aplay` fail on the default device (common on Bookworm)
+On some Bookworm images you may see errors like:
+- `ALSA lib pcm_asym.c:... capture slave is not defined`
+- `audio open error: Invalid argument`
+
+In that case, the **WM8960 device is fine**, but the ALSA `default` device is misconfigured.
+Use the WM8960 hardware device explicitly:
+```bash
+# WM8960 is usually card 1, device 0 when HDMI is card 0
+arecord -D plughw:1,0 -f S16_LE -c1 -r 16000 -d 5 test.wav
+aplay  -D plughw:1,0 test.wav
+
+# quick playback sanity check
+aplay -D plughw:1,0 /usr/share/sounds/alsa/Front_Center.wav
+```
+
+### If you get "no sound" even though playback succeeds
+This is usually mixer routing/mute on the WM8960. First open the WM8960 mixer:
+```bash
+alsamixer -c 1  # press F6, select wm8960-soundcard
+```
+
+If you prefer command-line (and to make it reproducible), force-enable the common WM8960 playback path:
+```bash
+# route PCM into the output mixers
+amixer -c 1 sset 'Left Output Mixer PCM' on
+amixer -c 1 sset 'Right Output Mixer PCM' on
+
+# ensure outputs aren’t muted/attenuated
+amixer -c 1 sset 'PCM Playback -6dB' on
+amixer -c 1 sset Speaker 127
+amixer -c 1 sset Headphone 127
+amixer -c 1 sset Playback 255
+
+aplay -D plughw:1,0 /usr/share/sounds/alsa/Front_Center.wav
+```
+
+To persist the working mixer state across reboots:
+```bash
+sudo alsactl store
+```
 
 ## Quick start (dev)
 ```bash
@@ -62,9 +100,9 @@ node pocketagent/index.js
 sudo bash scripts/install_pi.sh
 sudo nano /etc/default/pocketagent   # add OPENAI_API_KEY=...
 
-# Optional but commonly needed on WM8960/ULTRA++:
-# POCKETAGENT_RECORDING_DEVICE=plughw:1,0
-# POCKETAGENT_PLAYBACK_DEVICE=plughw:1,0
+# Recommended on WM8960/ULTRA++ (Bookworm often has a broken ALSA default device)
+POCKETAGENT_RECORDING_DEVICE=plughw:1,0
+POCKETAGENT_PLAYBACK_DEVICE=plughw:1,0
 
 sudo systemctl start pocketagent
 sudo journalctl -u pocketagent -f
