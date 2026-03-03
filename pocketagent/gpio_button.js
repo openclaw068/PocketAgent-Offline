@@ -22,21 +22,14 @@ export function startButtonWatcher({
   const helpText = `${help.stdout || ''}\n${help.stderr || ''}`;
   const supportsDebounceP = helpText.includes('--debounce-period') || helpText.includes('-p,');
 
-  const args = [
-    '-n',
-    '-F', '%E',
-    '-s'
-  ];
-
+  const args = ['-n', '-F', '%E', '-s'];
   if (supportsDebounceP) args.push('-p', String(debounceMs));
   else args.push('-B', String(debounceMs));
-
   args.push(gpioChip, String(line));
 
-  const proc = spawn('gpiomon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-
-  let buf = '';
   const listeners = { press: [], release: [] };
+  let buf = '';
+  let proc = null;
 
   function emit(kind) {
     for (const fn of listeners[kind]) {
@@ -47,37 +40,53 @@ export function startButtonWatcher({
   function edgeToAction(edge) {
     // If activeLow: pressed = falling edge (line pulled low)
     // else: pressed = rising edge
-    if (activeLow) {
-      return edge === 'falling' ? 'press' : 'release';
-    }
+    if (activeLow) return edge === 'falling' ? 'press' : 'release';
     return edge === 'rising' ? 'press' : 'release';
   }
 
-  proc.stdout.on('data', (d) => {
-    buf += d.toString();
-    let i;
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const lineText = buf.slice(0, i).trim();
-      buf = buf.slice(i + 1);
-      if (!lineText) continue;
-      const edge = lineText.toLowerCase();
-      if (edge !== 'rising' && edge !== 'falling') continue;
-      const action = edgeToAction(edge);
-      emit(action);
-    }
-  });
+  function spawnProc() {
+    buf = '';
+    proc = spawn('gpiomon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
-  proc.stderr.on('data', (d) => {
-    // pass through; caller can log if desired
-  });
+    proc.on('error', (err) => {
+      // Keep the Node process alive; systemd logs will show the issue.
+      console.error('[PocketAgent][gpio] failed to start gpiomon:', err?.message ?? err);
+    });
 
-  proc.on('exit', (code) => {
-    // no-op; caller can restart
-  });
+    proc.stdout.on('data', (d) => {
+      buf += d.toString();
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const lineText = buf.slice(0, i).trim();
+        buf = buf.slice(i + 1);
+        if (!lineText) continue;
+        const edge = lineText.toLowerCase();
+        if (edge !== 'rising' && edge !== 'falling') continue;
+        emit(edgeToAction(edge));
+      }
+    });
+
+    proc.stderr.on('data', (d) => {
+      const msg = d.toString().trim();
+      if (msg) console.error('[PocketAgent][gpio] gpiomon:', msg);
+    });
+
+    proc.on('exit', (code, signal) => {
+      // If gpiomon exits (permission issue, line busy, etc.), retry.
+      console.error('[PocketAgent][gpio] gpiomon exited:', { code, signal });
+      setTimeout(() => {
+        try { spawnProc(); } catch (e) {
+          console.error('[PocketAgent][gpio] restart failed:', e?.message ?? e);
+        }
+      }, 1000);
+    });
+  }
+
+  spawnProc();
 
   return {
     onPress(fn) { listeners.press.push(fn); return this; },
     onRelease(fn) { listeners.release.push(fn); return this; },
-    stop() { try { proc.kill('SIGTERM'); } catch {} }
+    stop() { try { proc?.kill('SIGTERM'); } catch {} }
   };
 }
