@@ -122,26 +122,48 @@ node pocketagent/index.js
 ## Install on Pi (systemd)
 ```bash
 sudo bash scripts/install_pi.sh
-sudo nano /etc/default/pocketagent   # add OPENAI_API_KEY=...
+sudo nano /etc/default/pocketagent   # set OPENAI_API_KEY="sk-..." (quotes recommended)
 
-# Recommended on WM8960/ULTRA++ (Bookworm often has a broken ALSA default device)
+# The installer pre-fills a working baseline for:
+# - WM8960 audio (plughw:1,0)
+# - ULTRA++ PTT button (chip=0, line=23, active-low)
+# - Stable button tuning (min-hold/debounce/cooldown)
+# - Default mode: chat (neutral voice agent, press-to-talk per turn)
+
+sudo systemctl start pocketagent
+sudo journalctl -u pocketagent -f
+```
+
+### Recommended baseline (known-good on Pi Zero 2 W + ULTRA++ / WM8960)
+Put these in `/etc/default/pocketagent` (ONE per line):
+```bash
+OPENAI_API_KEY="sk-..."
+
+POCKETAGENT_MODE=chat
+POCKETAGENT_CHAT_CARRYOVER_COUNT=10
+
 POCKETAGENT_RECORDING_DEVICE=plughw:1,0
 POCKETAGENT_PLAYBACK_DEVICE=plughw:1,0
 
-# ULTRA++ push-to-talk (some gpiod builds want chip number, not name)
 POCKETAGENT_GPIO_CHIP=0
 POCKETAGENT_PTT_GPIO_LINE=23
 POCKETAGENT_PTT_ACTIVE_LOW=true
 
-# Make it feel conversational: auto-listen after questions (no 2nd button press)
-POCKETAGENT_AUTO_LISTEN_ON_PROMPTS=true
-POCKETAGENT_AUTO_LISTEN_SECONDS=6
-# If capture fails right after playback, increase delay and/or enable retries
-POCKETAGENT_AUTO_LISTEN_DELAY_MS=800
-POCKETAGENT_AUTO_LISTEN_RECORD_RETRIES=4
+POCKETAGENT_PTT_MIN_HOLD_MS=2000
+POCKETAGENT_PTT_DEBOUNCE_MS=1000
+POCKETAGENT_PTT_COOLDOWN_MS=1500
 
-sudo systemctl start pocketagent
-sudo journalctl -u pocketagent -f
+POCKETAGENT_PROMPT_ON_PRESS=false
+```
+
+### Optional: hands-free chat (auto-listen)
+On some ALSA stacks, recording immediately after playback can fail intermittently. If you still want hands-free:
+```bash
+POCKETAGENT_CHAT_AUTO_LISTEN=true
+POCKETAGENT_CHAT_AUTO_LISTEN_MAX_TURNS=5
+POCKETAGENT_AUTO_LISTEN_SECONDS=6
+POCKETAGENT_AUTO_LISTEN_DELAY_MS=2000
+POCKETAGENT_AUTO_LISTEN_RECORD_RETRIES=20
 ```
 
 ### First-boot checklist (if something doesn’t work)

@@ -58,31 +58,44 @@ usermod -aG audio,gpio "$USER_NAME" || true
 # Lock down env file location for secrets (user should add OPENAI_API_KEY here)
 # IMPORTANT: systemd EnvironmentFile expects ONE KEY=VALUE per line.
 cat >/etc/default/pocketagent <<'EOF'
-# PocketAgent environment (one KEY=VALUE per line)
+# PocketAgent environment (ONE KEY=VALUE per line)
+# IMPORTANT: systemd EnvironmentFile will NOT parse multiple vars on one line.
+#
 # Required:
-# OPENAI_API_KEY=sk-...
+# Tip: wrap the key in double-quotes to avoid rare parsing issues.
+OPENAI_API_KEY="sk-REPLACE_ME"
 
-# Recommended on WM8960/ULTRA++:
-# POCKETAGENT_RECORDING_DEVICE=plughw:1,0
-# POCKETAGENT_PLAYBACK_DEVICE=plughw:1,0
+# Mode:
+# - chat = neutral voice agent (press-to-talk per turn)
+# - reminders = reminder specialist
+POCKETAGENT_MODE=chat
 
-# ULTRA++ push-to-talk:
-# POCKETAGENT_GPIO_CHIP=0
-# POCKETAGENT_PTT_GPIO_LINE=23
-# POCKETAGENT_PTT_ACTIVE_LOW=true
+# Recommended on WM8960/ULTRA++ (Bookworm often has a broken ALSA default device)
+POCKETAGENT_RECORDING_DEVICE=plughw:1,0
+POCKETAGENT_PLAYBACK_DEVICE=plughw:1,0
 
-# Modes:
-# POCKETAGENT_MODE=reminders   # default
-# POCKETAGENT_MODE=chat        # neutral voice agent
+# ULTRA++ push-to-talk (some gpiod builds want chip number, not name)
+POCKETAGENT_GPIO_CHIP=0
+POCKETAGENT_PTT_GPIO_LINE=23
+POCKETAGENT_PTT_ACTIVE_LOW=true
 
-# Conversation mode (hands-free replies after questions, reminders mode):
-# POCKETAGENT_AUTO_LISTEN_ON_PROMPTS=true
+# Button stability (debounce/bounce)
+POCKETAGENT_PTT_MIN_HOLD_MS=2000
+POCKETAGENT_PTT_DEBOUNCE_MS=1000
+POCKETAGENT_PTT_COOLDOWN_MS=1500
+
+# Optional: disable the "hold the button" spoken prompt
+POCKETAGENT_PROMPT_ON_PRESS=false
+
+# Chat mode memory carryover (persist last N messages between restarts)
+POCKETAGENT_CHAT_CARRYOVER_COUNT=10
+
+# Optional hands-free chat (can be flaky on some ALSA stacks):
+# POCKETAGENT_CHAT_AUTO_LISTEN=true
+# POCKETAGENT_CHAT_AUTO_LISTEN_MAX_TURNS=5
 # POCKETAGENT_AUTO_LISTEN_SECONDS=6
-# POCKETAGENT_AUTO_LISTEN_DELAY_MS=800
-# POCKETAGENT_AUTO_LISTEN_RECORD_RETRIES=4
-
-# Chat mode carryover (persist last N messages between restarts):
-# POCKETAGENT_CHAT_CARRYOVER_COUNT=10
+# POCKETAGENT_AUTO_LISTEN_DELAY_MS=2000
+# POCKETAGENT_AUTO_LISTEN_RECORD_RETRIES=20
 EOF
 
 chown root:root /etc/default/pocketagent
