@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULTS } from './config.js';
-import { recordToWav, playWav } from './audio.js';
+import { recordToWav, playWav, runHook } from './audio.js';
 import { whisperTranscribe, ttsToAudio, chat as openaiChat } from './openai.js';
 import http from 'node:http';
 
@@ -763,11 +763,26 @@ async function oneTurn({ abortSignal = null } = {}) {
 const PTT_MODE = (process.env.POCKETAGENT_PTT_MODE || 'gpio').toLowerCase();
 
 async function safeOneTurn(abortSignal = null) {
+  const onStart = process.env.POCKETAGENT_ON_TURN_START_CMD || '';
+  const onEnd = process.env.POCKETAGENT_ON_TURN_END_CMD || '';
+  const onEndDelayMs = Number(process.env.POCKETAGENT_ON_TURN_END_DELAY_MS ?? 0);
+
   try {
+    // Stop/duck external audio sources (e.g., shairport-sync) before recording.
+    try { await runHook(onStart); } catch (e) { console.error('[PocketAgent] on-turn-start hook failed:', e?.message ?? e); }
+
     await oneTurn({ abortSignal });
   } catch (e) {
     console.error(e);
     try { await say('Something went wrong. Check the logs.'); } catch {}
+  } finally {
+    // Resume external audio sources after we finish speaking.
+    try {
+      if (onEndDelayMs > 0) await new Promise(r => setTimeout(r, onEndDelayMs));
+      await runHook(onEnd);
+    } catch (e) {
+      console.error('[PocketAgent] on-turn-end hook failed:', e?.message ?? e);
+    }
   }
 }
 

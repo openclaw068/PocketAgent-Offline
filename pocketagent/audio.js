@@ -70,3 +70,22 @@ export async function playWav({ wavPath, cmd = 'aplay', device = null }) {
     });
   });
 }
+
+export async function runHook(cmd) {
+  const s = String(cmd || '').trim();
+  if (!s) return;
+
+  // Use a shell so users can pass simple commands like:
+  //   systemctl stop shairport-sync
+  //   /usr/bin/logger "..."
+  return await new Promise((resolve, reject) => {
+    const proc = spawn('sh', ['-lc', s], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', d => (stderr += d.toString()));
+    proc.on('error', reject);
+    proc.on('close', code => {
+      if (code === 0) return resolve();
+      reject(new Error(`hook failed (code ${code}): ${stderr}`));
+    });
+  });
+}
