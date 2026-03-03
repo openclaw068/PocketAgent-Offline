@@ -9,7 +9,9 @@ export const DEFAULTS = {
   // OpenAI
   openaiApiKeyEnv: 'OPENAI_API_KEY',
   openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+  // Keep costs low by default
   whisperModel: process.env.POCKETAGENT_WHISPER_MODEL || 'gpt-4o-mini-transcribe',
+  // Keep costs low by default
   chatModel: process.env.POCKETAGENT_CHAT_MODEL || 'gpt-4o-mini',
   ttsModel: process.env.POCKETAGENT_TTS_MODEL || 'gpt-4o-mini-tts',
   ttsVoice: process.env.POCKETAGENT_TTS_VOICE || 'alloy',
