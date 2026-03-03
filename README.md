@@ -61,8 +61,28 @@ node pocketagent/index.js
 ```bash
 sudo bash scripts/install_pi.sh
 sudo nano /etc/default/pocketagent   # add OPENAI_API_KEY=...
+
+# Optional but commonly needed on WM8960/ULTRA++:
+# POCKETAGENT_RECORDING_DEVICE=plughw:1,0
+# POCKETAGENT_PLAYBACK_DEVICE=plughw:1,0
+
 sudo systemctl start pocketagent
 sudo journalctl -u pocketagent -f
+```
+
+### First-boot checklist (if something doesn’t work)
+```bash
+# 1) Verify the sound card exists
+aplay -l
+arecord -l
+
+# 2) Verify capture/playback
+arecord -f cd -d 5 test.wav
+aplay test.wav
+
+# 3) Verify the push-to-talk button emits edges
+gpiomon --help | head
+sudo gpiomon -n -F %E -s gpiochip0 23
 ```
 
 ## Notes on Piper (offline TTS)

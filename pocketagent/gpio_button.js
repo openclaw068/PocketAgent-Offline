@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 // Uses libgpiod's `gpiomon` to listen for button press/release events.
 // This avoids native Node builds and works well on Raspberry Pi OS.
@@ -14,14 +14,24 @@ export function startButtonWatcher({
   // the line is HIGH when idle and goes LOW when pressed => activeLow=true.
   activeLow = (process.env.POCKETAGENT_PTT_ACTIVE_LOW ?? 'true').toLowerCase() === 'true'
 } = {}) {
+  // gpiomon flag compatibility across libgpiod versions:
+  // - Newer versions: -p/--debounce-period
+  // - Some older builds: -B
+  // Also, %E prints "rising"/"falling" (strings); %e is numeric.
+  const help = spawnSync('gpiomon', ['--help'], { encoding: 'utf8' });
+  const helpText = `${help.stdout || ''}\n${help.stderr || ''}`;
+  const supportsDebounceP = helpText.includes('--debounce-period') || helpText.includes('-p,');
+
   const args = [
-    '-n', // numeric timestamps (easier to parse but we only use ordering)
-    '-F', '%e', // print edge only: rising|falling
-    '-s', // silent (no banner)
-    '-B', String(debounceMs),
-    gpioChip,
-    String(line)
+    '-n',
+    '-F', '%E',
+    '-s'
   ];
+
+  if (supportsDebounceP) args.push('-p', String(debounceMs));
+  else args.push('-B', String(debounceMs));
+
+  args.push(gpioChip, String(line));
 
   const proc = spawn('gpiomon', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 

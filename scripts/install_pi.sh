@@ -5,7 +5,8 @@ set -euo pipefail
 # Usage: sudo bash scripts/install_pi.sh
 
 APP_DIR="/opt/pocketagent"
-USER_NAME="pi"
+# Prefer the user who invoked sudo (common on Pi OS Lite), otherwise fall back.
+USER_NAME="${SUDO_USER:-pi}"
 REPO_URL="${POCKETAGENT_REPO_URL:-https://github.com/openclaw068/PocketAgent.git}"
 
 apt-get update
@@ -16,11 +17,16 @@ apt-get install -y --no-install-recommends \
   gpiod \
   libgpiod2
 
-# Node.js: assume already installed OR install via NodeSource if needed.
+# Node.js: install Node 20+ via NodeSource if missing.
 if ! command -v node >/dev/null 2>&1; then
-  echo "Node.js not found. Install Node.js 20+ first (recommended), then re-run."
-  exit 1
+  echo "Node.js not found. Installing Node.js 20.x (NodeSource)…"
+  apt-get install -y --no-install-recommends curl
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y --no-install-recommends nodejs
 fi
+
+# Quick sanity check
+node -v
 
 mkdir -p "$APP_DIR"
 
@@ -56,8 +62,8 @@ chmod 600 /etc/default/pocketagent
 
 chown -R "$USER_NAME":"$USER_NAME" "$APP_DIR"
 
-# systemd
-cp -f systemd/pocketagent.service /etc/systemd/system/pocketagent.service
+# systemd: template service with correct user/group
+sed "s/^User=.*/User=${USER_NAME}/; s/^Group=.*/Group=${USER_NAME}/" systemd/pocketagent.service > /etc/systemd/system/pocketagent.service
 systemctl daemon-reload
 systemctl enable pocketagent
 

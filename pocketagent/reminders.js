@@ -106,9 +106,11 @@ export class ReminderEngine {
   }
 
   _scheduleReminder(r) {
+    // One-shot reminder: schedule directly on the Date.
+    // Timezone correctness comes from the system timezone on the Pi.
     this._cancel(r.id);
     const date = new Date(r.dueAtIso);
-    const job = schedule.scheduleJob({ start: date, rule: date, tz: this.tz }, async () => {
+    const job = schedule.scheduleJob(date, async () => {
       await this._fire(r.id);
     });
     this.jobs.set(r.id, job);
