@@ -160,7 +160,9 @@ engine.start(async (r, meta) => notify(r, meta));
 
 async function oneTurn({ abortSignal = null } = {}) {
   const wavPath = path.join(DATA_DIR, 'input.wav');
-  await say('Hold the button and speak.');
+  if ((process.env.POCKETAGENT_PROMPT_ON_PRESS ?? 'true').toLowerCase() === 'true') {
+    await say('Hold the button and speak.');
+  }
 
   // Ensure we never accidentally reuse a stale recording if arecord fails to create the file.
   try { fs.unlinkSync(wavPath); } catch {}
