@@ -2,10 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DEFAULTS } from './config.js';
 import { recordToWav, playWav } from './audio.js';
-import { whisperTranscribe, ttsToAudio } from './openai.js';
+import { whisperTranscribe, ttsToAudio, chat as openaiChat } from './openai.js';
 import { ReminderEngine, newId } from './reminders.js';
 import { handleUtterance } from './agent.js';
 import { loadJson, saveJson } from './store.js';
+// (openaiChat is imported above with whisperTranscribe/ttsToAudio)
 import { answerReminderQuery, selectRemindersForQuery } from './query.js';
 import { setVolumePercent } from './volume.js';
 import { startButtonWatcher } from './gpio_button.js';
@@ -30,9 +31,44 @@ const runtime = {
         maxCount: null,
         quietHours: { start: 23, end: 7 }
       }
-    })
+    }),
+
+    // Chat mode conversation memory
+    chat: {
+      sessionId: null,
+      messages: [],
+      carryover: []
+    }
   }
 };
+
+function loadChatHistory() {
+  return loadJson(DEFAULTS.chatHistoryFile, {
+    last10: [],
+    lastSessionId: null,
+    updatedAtIso: null
+  });
+}
+
+function saveChatHistory(last10, sessionId = null) {
+  saveJson(DEFAULTS.chatHistoryFile, {
+    last10,
+    lastSessionId: sessionId,
+    updatedAtIso: new Date().toISOString()
+  });
+}
+
+function newSessionId() {
+  return Math.random().toString(16).slice(2) + '-' + Date.now().toString(16);
+}
+
+function bootstrapChatSession() {
+  const h = loadChatHistory();
+  runtime.state.chat.sessionId = newSessionId();
+  runtime.state.chat.carryover = Array.isArray(h.last10) ? h.last10.slice(-DEFAULTS.chatCarryoverCount) : [];
+  runtime.state.chat.messages = [...runtime.state.chat.carryover];
+  console.log('[PocketAgent] chat session:', { sessionId: runtime.state.chat.sessionId, carryover: runtime.state.chat.carryover.length });
+}
 
 function followupFromSpec(spec) {
   const d = runtime.state.defaults.followup;
@@ -155,11 +191,18 @@ async function notify(reminder, meta) {
   }
 }
 
+// Reminders engine is only used in reminders mode.
 const engine = new ReminderEngine({ dbFile: remindersPath, timezone: runtime.state.defaults.timezone });
-engine.start(async (r, meta) => notify(r, meta));
+if (DEFAULTS.mode !== 'chat') {
+  engine.start(async (r, meta) => notify(r, meta));
+} else {
+  // In chat mode, bootstrap conversation memory.
+  bootstrapChatSession();
+}
 
 async function oneTurn({ abortSignal = null } = {}) {
   const wavPath = path.join(DATA_DIR, 'input.wav');
+
   if ((process.env.POCKETAGENT_PROMPT_ON_PRESS ?? 'true').toLowerCase() === 'true') {
     await say('Hold the button and speak.');
   }
@@ -183,8 +226,6 @@ async function oneTurn({ abortSignal = null } = {}) {
     console.log('[PocketAgent] recorded bytes: <missing>', 'aborted=', !!rec?.aborted);
   }
 
-  // If the user released immediately, arecord exits (often code 130) and we may have
-  // no file. Avoid crashing on ENOENT.
   if (rec?.aborted && !fs.existsSync(wavPath)) {
     console.log('Recording aborted before audio was written; ignoring.');
     return;
@@ -207,6 +248,31 @@ async function oneTurn({ abortSignal = null } = {}) {
   });
   console.log('Heard:', text);
 
+  // CHAT MODE: act like a neutral voice assistant with conversation memory.
+  if (DEFAULTS.mode === 'chat') {
+    // Append user message
+    runtime.state.chat.messages.push({ role: 'user', content: text });
+
+    const systemPrompt = (process.env.POCKETAGENT_CHAT_SYSTEM_PROMPT || '').trim() ||
+      'You are a helpful, concise voice assistant. Keep replies short and conversational.';
+
+    // Build messages: system + full session
+    const messages = [{ role: 'system', content: systemPrompt }, ...runtime.state.chat.messages];
+
+    const reply = await openaiChat({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, messages });
+    const assistantText = (reply || '').trim();
+
+    runtime.state.chat.messages.push({ role: 'assistant', content: assistantText });
+
+    // Persist last N for next boot
+    const last10 = runtime.state.chat.messages.slice(-DEFAULTS.chatCarryoverCount);
+    saveChatHistory(last10, runtime.state.chat.sessionId);
+
+    await say(assistantText || 'Okay.');
+    return;
+  }
+
+  // REMINDERS MODE: state machine
   const result = await handleUtterance({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, text, state: runtime.state });
 
   if (result.intent === 'update_defaults' && result.defaultsPatch) {
@@ -217,7 +283,6 @@ async function oneTurn({ abortSignal = null } = {}) {
       runtime.state.defaults.followup.maxCount = p.maxCount ?? null;
       if (p.quietHours) runtime.state.defaults.followup.quietHours = p.quietHours;
     } else {
-      // once
       runtime.state.defaults.followup.maxCount = null;
     }
 
@@ -232,6 +297,7 @@ async function oneTurn({ abortSignal = null } = {}) {
     await say(summary);
     return;
   }
+
   runtime.state = result.state ?? runtime.state;
 
   // If we just collected a full reminder

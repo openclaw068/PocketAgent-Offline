@@ -21,6 +21,11 @@ export const DEFAULTS = {
   defaultsFile: process.env.POCKETAGENT_DEFAULTS_FILE || './data/defaults.json',
   remindersDbFile: process.env.POCKETAGENT_REMINDERS_DB || './data/reminders.json',
 
+  // Chat mode
+  mode: (process.env.POCKETAGENT_MODE || 'reminders').toLowerCase(), // reminders|chat
+  chatHistoryFile: process.env.POCKETAGENT_CHAT_HISTORY_FILE || './data/chat_history.json',
+  chatCarryoverCount: Number(process.env.POCKETAGENT_CHAT_CARRYOVER_COUNT || 10),
+
   // Volume (ALSA/amixer)
   alsaCard: process.env.POCKETAGENT_ALSA_CARD ?? null, // e.g. 0, 1
   alsaVolumeControl: process.env.POCKETAGENT_ALSA_VOLUME_CONTROL || 'Speaker',
