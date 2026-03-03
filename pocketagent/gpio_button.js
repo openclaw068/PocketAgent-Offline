@@ -21,7 +21,6 @@ export function startButtonWatcher({
   const help = spawnSync('gpiomon', ['--help'], { encoding: 'utf8' });
   const helpText = `${help.stdout || ''}\n${help.stderr || ''}`;
   const supportsDebounceP = helpText.includes('--debounce-period') || helpText.includes('-p,');
-  const supportsDebounceB = helpText.includes(' -B') || helpText.includes('\n-B');
 
   // NOTE: gpiomon CLI varies a lot between libgpiod versions. In some versions `-n`
   // expects an integer (num events). Passing `-n` with no value causes the next flag
@@ -33,7 +32,8 @@ export function startButtonWatcher({
   const args = [];
 
   if (supportsDebounceP) args.push('-p', String(debounceMs));
-  else if (supportsDebounceB) args.push('-B', String(debounceMs));
+  // Do NOT use -B here. In many gpiomon versions -B is "--bias" (not debounce)
+  // and passing a number causes "invalid bias: <num>".
 
   args.push(String(gpioChip), String(line));
 
