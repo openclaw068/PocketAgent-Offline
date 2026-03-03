@@ -244,6 +244,43 @@ async function oneTurn({ abortSignal = null } = {}) {
     return;
   }
 
+  // Auto-listen mode: if the agent is asking a question (pending state),
+  // listen immediately after speaking so the user can respond without pressing the button again.
+  if ((process.env.POCKETAGENT_AUTO_LISTEN_ON_PROMPTS ?? 'false').toLowerCase() === 'true') {
+    const pendingKind = runtime.state?.pending?.kind;
+    const shouldAutoListen = pendingKind && pendingKind !== 'confirm_volume' ? true : !!pendingKind;
+
+    if (shouldAutoListen) {
+      const secondsMax = Number(process.env.POCKETAGENT_AUTO_LISTEN_SECONDS ?? 6);
+      const wavPath2 = path.join(DATA_DIR, 'input.wav');
+      try { fs.unlinkSync(wavPath2); } catch {}
+
+      await recordToWav({
+        outPath: wavPath2,
+        sampleRateHertz: DEFAULTS.sampleRateHertz,
+        device: DEFAULTS.recordingDevice,
+        secondsMax
+      });
+
+      if (fs.existsSync(wavPath2)) {
+        const text2 = await whisperTranscribe({
+          baseUrl,
+          apiKeyEnv,
+          audioPath: wavPath2,
+          model: DEFAULTS.whisperModel,
+          prompt: process.env.POCKETAGENT_WHISPER_PROMPT || null,
+          language: process.env.POCKETAGENT_WHISPER_LANGUAGE || null,
+          responseFormat: process.env.POCKETAGENT_WHISPER_RESPONSE_FORMAT || 'json'
+        });
+        console.log('Heard (auto):', text2);
+        const result2 = await handleUtterance({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, text: text2, state: runtime.state });
+        runtime.state = result2.state ?? runtime.state;
+        if (result2.say) await say(result2.say);
+        return;
+      }
+    }
+  }
+
   if (result.intent === 'ack_latest') {
     const id = runtime.state.lastNotifiedReminderId;
     if (id) engine.acknowledge(id);
