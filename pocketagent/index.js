@@ -6,6 +6,7 @@ import { whisperTranscribe, ttsToAudio, chat as openaiChat } from './openai.js';
 import http from 'node:http';
 
 import { handleUtterance } from './agent.js';
+import { routeUtterance } from './router.js';
 import { loadJson, saveJson } from './store.js';
 // (openaiChat is imported above with whisperTranscribe/ttsToAudio)
 import { answerReminderQuery, selectRemindersForQuery } from './query.js';
@@ -434,17 +435,65 @@ async function oneTurn({ abortSignal = null } = {}) {
   console.log('Heard:', text);
 
   // CHAT MODE: general voice assistant + reminder control.
-  // In chat mode we still allow reminder actions (create/list/ack/etc) by running the
-  // reminders state machine first and only falling back to open-ended chat if it
-  // wasn’t a reminder-related request.
+  // In chat mode, route with the LLM (natural language) and execute local reminder actions.
+  // Fall back to open-ended chat only when the router says it's general chat.
   if (DEFAULTS.mode === 'chat') {
-    // First: try reminders state machine
-    const r1 = await handleUtterance({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, text, state: runtime.state });
-    runtime.state = r1.state ?? runtime.state;
+    // 1) LLM router (broad NL understanding)
+    const routed = await routeUtterance({
+      baseUrl,
+      apiKeyEnv,
+      model: DEFAULTS.chatModel,
+      text,
+      hasLastNotified: !!runtime.state.lastNotifiedReminderId
+    });
 
-    // If it looks like a reminders intent, execute it here.
-    // In chat mode, treat reminders-only guardrails as a signal to fall back to general chat.
+    // 2) Translate router output into the existing reminders state machine where helpful
+    // (keeps time/follow-up confirmation flows intact).
+    if (routed?.intent === 'create_reminder') {
+      // Kick off the existing reminder creation flow.
+      // If timeText was provided, we can skip ask_time and go straight to followup collection.
+      if (routed.timeText) {
+        runtime.state.pending = { kind: 'ask_followup', reminderText: routed.reminderText || text, timeText: routed.timeText };
+        await say(`Okay — ${routed.timeText}. If I remind you and you don’t respond, how should I handle follow-ups?`);
+        return;
+      }
+      runtime.state.pending = { kind: 'ask_time', reminderText: routed.reminderText || text };
+      await say('Sure — what time should I remind you?');
+      return;
+    }
+
+    if (routed?.intent === 'query_reminders') {
+      const q = routed.queryText || text;
+      // Reuse existing query handler logic by simulating the state machine intent.
+      const r1 = { intent: 'query_reminders', queryText: q };
+      // (execution continues in the shared handlers below)
+      // fall through by setting a variable
+      runtime.state._routedIntent = r1;
+    } else if (routed?.intent === 'ack_reminder') {
+      // If user indicates completion, ack latest by default.
+      const id = runtime.state.lastNotifiedReminderId;
+      if (id) {
+        await remindersPost('/reminders/ack', { id });
+        await say('Nice — I’ll mark that as done.');
+      } else {
+        await say("Okay — which reminder do you mean?");
+      }
+      return;
+    } else if (routed?.intent === 'set_volume' && routed.volumePercent != null) {
+      const pct = await setVolumePercent({ card: DEFAULTS.alsaCard, control: DEFAULTS.alsaVolumeControl, percent: routed.volumePercent });
+      await say(`Done — volume set to ${pct} percent.`);
+      return;
+    } else if (routed?.intent !== 'general_chat') {
+      // If router produced something we don't handle yet, fall back to the legacy state machine.
+      const r1 = await handleUtterance({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, text, state: runtime.state });
+      runtime.state = r1.state ?? runtime.state;
+      runtime.state._routedIntent = r1;
+    }
+
+    // If we have an intent from routing/state machine, execute the existing handlers.
+    const r1 = runtime.state._routedIntent;
     if (r1?.intent && r1.intent !== 'unknown' && r1.intent !== 'out_of_scope') {
+      runtime.state._routedIntent = null;
       // Handle defaults updates
       if (r1.intent === 'update_defaults' && r1.defaultsPatch) {
         const p = r1.defaultsPatch;
