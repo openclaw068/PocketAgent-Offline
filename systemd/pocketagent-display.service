@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/pocketagent
 Environment=NODE_ENV=production
+Environment=WHISPLAY_DRIVER_PATH=/opt/pocketagent/whisplay/driver
 EnvironmentFile=-/etc/default/pocketagent
 ExecStart=/usr/bin/python3 /opt/pocketagent/whisplay/display/server.py
 Restart=on-failure
