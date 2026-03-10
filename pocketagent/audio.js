@@ -82,19 +82,22 @@ export async function playWav({ wavPath, cmd = 'aplay', device = null }) {
     const args = [];
     if (device) args.push('-D', device);
     args.push(wavPath);
+
     const proc = spawn(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
+
     proc.stderr.on('data', (d) => {
       const t = d.toString();
       stderr += t;
-      if (AUDIO_DEBUG) console.log('[PocketAgent][audio][arecord:stderr]', t.trim());
+      if (AUDIO_DEBUG) console.log(`[PocketAgent][audio][${cmd}:stderr]`, t.trim());
     });
+
     proc.on('error', reject);
     proc.on('close', (code) => {
       if (AUDIO_DEBUG) {
         let bytes = null;
-        try { bytes = fs.statSync(outPath).size; } catch {}
-        console.log('[PocketAgent][audio] arecord closed', { code, aborted, bytes, stderr: (stderr || '').trim().slice(0, 500) });
+        try { bytes = fs.statSync(wavPath).size; } catch {}
+        console.log(`[PocketAgent][audio] ${cmd} closed`, { code, bytes, stderr: (stderr || '').trim().slice(0, 500) });
       }
 
       if (code === 0) return resolve();
