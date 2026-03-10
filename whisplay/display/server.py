@@ -105,6 +105,13 @@ _last_frame_at = 0.0
 # Render thread control
 _stop = False
 
+# Sleep settings (backlight only; we still render frames)
+SLEEP_SECS = float(os.environ.get("POCKETAGENT_DISPLAY_SLEEP_SECS", "0") or "0")
+# Backlight to restore on wake (defaults to current configured backlight env or 60)
+WAKE_BACKLIGHT = int(os.environ.get("POCKETAGENT_DISPLAY_WAKE_BACKLIGHT", os.environ.get("POCKETAGENT_DISPLAY_BACKLIGHT", "60")))
+
+_last_update_at = time.time()
+
 
 def now_iso():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -340,6 +347,8 @@ class WhisplayBackend(DisplayBackend):
     def __init__(self):
         self.ok = False
         self.board = None
+        self._asleep = False
+        self._last_bl = None
         self._init_driver()
 
     def _init_driver(self):
@@ -351,7 +360,9 @@ class WhisplayBackend(DisplayBackend):
             self.board = WhisPlayBoard()
             try:
                 # reasonable default backlight
-                self.board.set_backlight(int(os.environ.get("POCKETAGENT_DISPLAY_BACKLIGHT", "60")))
+                bl = WAKE_BACKLIGHT
+                self.board.set_backlight(bl)
+                self._last_bl = bl
             except Exception:
                 pass
             self.ok = True
@@ -360,11 +371,30 @@ class WhisplayBackend(DisplayBackend):
             sys.stdout.flush()
             self.ok = False
 
+    def _set_backlight(self, value: int):
+        try:
+            self.board.set_backlight(int(value))  # type: ignore[attr-defined]
+            self._last_bl = int(value)
+        except Exception:
+            pass
+
     def present(self, s: dict):
         if not self.ok or not self.board:
             return
 
         st = (s.get("status") or "idle").lower()
+
+        # Backlight sleep: if idle for N seconds, turn backlight off.
+        # Wake on any non-idle active state.
+        if SLEEP_SECS and SLEEP_SECS > 0:
+            idle_too_long = (st == "idle") and ((time.time() - _last_update_at) >= SLEEP_SECS)
+            if idle_too_long and not self._asleep:
+                self._asleep = True
+                self._set_backlight(0)
+            elif (not idle_too_long) and self._asleep:
+                self._asleep = False
+                self._set_backlight(WAKE_BACKLIGHT)
+
         rgb = {
             "idle": (0, 0, 0),
             "listening": (0, 90, 40),
@@ -472,6 +502,8 @@ class Handler(BaseHTTPRequestHandler):
 
         global _state_dirty
 
+        global _last_update_at
+
         with _state_lock:
             # Shallow merge
             for k, v in (body or {}).items():
@@ -479,6 +511,7 @@ class Handler(BaseHTTPRequestHandler):
                     state[k] = v
             state["updatedAt"] = now_iso()
             _state_dirty = True
+            _last_update_at = time.time()
 
         self._json(200, {"ok": True})
 
