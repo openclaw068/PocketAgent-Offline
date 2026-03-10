@@ -150,15 +150,17 @@ function parseDue(timeText) {
 
 async function say(text) {
   // Never let TTS/audio failures crash the whole loop.
+  const spoken = String(text || '').trim();
   try {
-    // Best-effort: show what we're about to say on the display.
-    void displayUpdate({ status: 'speaking', line2: String(text || '').slice(0, 160) });
+    // Show what we're about to say on the display.
+    void displayUpdate({ status: 'speaking', line1: 'PocketAgent', line2: spoken.slice(0, 160) });
+
     const { audio, contentType } = await ttsToAudio({
       baseUrl,
       apiKeyEnv,
       model: DEFAULTS.ttsModel,
       voice: DEFAULTS.ttsVoice,
-      text,
+      text: spoken,
       format: 'wav'
     });
     const out = path.join(DATA_DIR, 'tts.wav');
@@ -170,10 +172,15 @@ async function say(text) {
     }
 
     await playWav({ wavPath: out, cmd: DEFAULTS.playbackCommand, device: DEFAULTS.playbackDevice });
+
+    // Return to idle once audio playback ends.
+    void displayUpdate({ status: 'idle', line1: 'PocketAgent', line2: spoken.slice(0, 160) });
   } catch (e) {
     console.error('say() failed:', e?.message ?? e);
+    void displayUpdate({ status: 'error', line1: 'PocketAgent', line2: 'TTS failed' });
+
     // Fallback: log the prompt so the system stays usable even if quota is exhausted.
-    console.log('SAY:', text);
+    console.log('SAY:', spoken);
   }
 }
 
@@ -400,6 +407,10 @@ async function oneTurn({ abortSignal = null } = {}) {
       // Don't block recording start on TTS playback; it can delay arecord long enough that release aborts immediately.
       void say('Hold the button and speak.');
     }
+
+    // User is holding the button: show LISTENING.
+    void displayUpdate({ status: 'listening', line1: 'PocketAgent', line2: 'Listening…' });
+
     console.log('[PocketAgent] starting recordToWav at', new Date().toISOString());
     const rec = await recordToWav({
       outPath: wavPath,

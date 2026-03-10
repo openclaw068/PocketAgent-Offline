@@ -249,12 +249,27 @@ def render_frame(s: dict, t: float):
             hl_r = 8
             hx, hy = ex - 12, eye_y - 12
             d.ellipse((hx - hl_r, hy - hl_r, hx + hl_r, hy + hl_r), fill=(255, 255, 255))
-    # mouth: simple small smile (black) on white head
 
+    # mouth: animate while speaking (simple cycle)
     mx0, my0, mx1, my1 = (cx - 26, cy + 27, cx + 26, cy + 51)
 
-    d.arc((mx0, my0, mx1, my1), start=20, end=160, fill=(0, 0, 0), width=5)
-
+    if status == "speaking":
+        phase = int((t * 10) % 4)
+        if phase == 0:
+            # small smile
+            d.arc((mx0, my0, mx1, my1), start=20, end=160, fill=(0, 0, 0), width=5)
+        elif phase == 1:
+            # flat line
+            d.rounded_rectangle((cx - 18, cy + 40, cx + 18, cy + 44), radius=3, fill=(0, 0, 0))
+        elif phase == 2:
+            # open mouth
+            d.ellipse((cx - 10, cy + 34, cx + 10, cy + 50), outline=(0, 0, 0), width=5)
+        else:
+            # wider open mouth
+            d.ellipse((cx - 14, cy + 34, cx + 14, cy + 50), outline=(0, 0, 0), width=5)
+    else:
+        # idle/default: small smile
+        d.arc((mx0, my0, mx1, my1), start=20, end=160, fill=(0, 0, 0), width=5)
 
     # subtitle bubble
 
