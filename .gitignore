@@ -3,3 +3,6 @@ data/
 *.wav
 .env
 .DS_Store
+
+# local debug/backups
+*.bak*
