@@ -488,6 +488,20 @@ async function oneTurn({ abortSignal = null } = {}) {
   console.log('Heard:', text);
   void displayUpdate({ status: 'transcribing', line1: 'You', line2: String(text || '').slice(0, 160) });
 
+  // Fast-path: if the user says "done"/"yes" after a reminder fired, ack the latest reminder.
+  // This avoids router misclassification and makes PTT acknowledgement reliable.
+  try {
+    if (runtime.state.lastNotifiedReminderId && isAck(text || '')) {
+      const id = runtime.state.lastNotifiedReminderId;
+      console.log('[PocketAgent] ack latest (fast-path):', { id, heard: String(text || '').trim() });
+      await remindersPost('/reminders/ack', { id });
+      await say('Nice — I’ll mark that as done.');
+      return;
+    }
+  } catch (e) {
+    console.error('[PocketAgent] fast-path ack failed:', e?.message ?? e);
+  }
+
   // CHAT MODE: general voice assistant + reminder control.
   // In chat mode, route with the LLM (natural language) and execute local reminder actions.
   // Fall back to open-ended chat only when the router says it's general chat.
