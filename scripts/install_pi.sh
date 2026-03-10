@@ -124,7 +124,12 @@ POCKETAGENT_DISPLAY_HOST=127.0.0.1
 POCKETAGENT_DISPLAY_PORT=3782
 # Modes: auto|whisplay|stdout|off
 POCKETAGENT_DISPLAY_MODE=auto
-WHISPLAY_DRIVER_PATH=/opt/Whisplay/Driver
+
+# Sleep after N seconds of idle inactivity (backlight only). 0 disables.
+POCKETAGENT_DISPLAY_SLEEP_SECS=15
+
+# Use vendored driver by default (prevents GPIO17 contention w/ PocketAgent)
+WHISPLAY_DRIVER_PATH=/opt/pocketagent/whisplay/driver
 
 # Optional hands-free chat (can be flaky on some ALSA stacks):
 # POCKETAGENT_CHAT_AUTO_LISTEN=true
