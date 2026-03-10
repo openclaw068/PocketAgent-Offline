@@ -12,6 +12,7 @@ import { loadJson, saveJson } from './store.js';
 import { answerReminderQuery, selectRemindersForQuery } from './query.js';
 import { setVolumePercent } from './volume.js';
 import { startButtonWatcher } from './gpio_button.js';
+import { startWhisplayButtonWatcher } from './whisplay_button.js';
 import { bestReminderMatch } from './match.js';
 import { displayUpdate } from './display_client.js';
 
@@ -392,15 +393,14 @@ void maybeAnnounceStartupOncePerBoot();
 async function oneTurn({ abortSignal = null } = {}) {
   busy = true;
   try {
-    const wavPath = path.join(DATA_DIR, 'input.wav');
+    const wavPath = path.join(DATA_DIR, `input-${Date.now()}.wav`);
+    console.log('[PocketAgent] wavPath:', wavPath);
 
     if ((process.env.POCKETAGENT_PROMPT_ON_PRESS ?? 'true').toLowerCase() === 'true') {
-      await say('Hold the button and speak.');
+      // Don't block recording start on TTS playback; it can delay arecord long enough that release aborts immediately.
+      void say('Hold the button and speak.');
     }
-
-    // Ensure we never accidentally reuse a stale recording if arecord fails to create the file.
-    try { fs.unlinkSync(wavPath); } catch {}
-
+    console.log('[PocketAgent] starting recordToWav at', new Date().toISOString());
     const rec = await recordToWav({
       outPath: wavPath,
       sampleRateHertz: DEFAULTS.sampleRateHertz,
@@ -416,6 +416,15 @@ async function oneTurn({ abortSignal = null } = {}) {
     } catch {
       console.log('[PocketAgent] recorded bytes: <missing>', 'aborted=', !!rec?.aborted);
     }
+    // If we have a WAV header but no real audio, don't send it to STT.
+    // (This happens when arecord is interrupted very quickly.)
+    try {
+      const st2 = fs.statSync(wavPath);
+      if (st2.size < 2048) {
+        console.log('[PocketAgent] recording too small; ignoring');
+        return;
+      }
+    } catch {}
 
     if (rec?.aborted && !fs.existsSync(wavPath)) {
       console.log('Recording aborted before audio was written; ignoring.');
@@ -935,6 +944,7 @@ function logConfig() {
 }
 
 logConfig();
+console.log('[PocketAgent] cwd:', process.cwd());
 
 if (PTT_MODE === 'stdin') {
   // Dev mode: press ENTER to simulate a button press.
@@ -951,7 +961,7 @@ if (PTT_MODE === 'stdin') {
 
   const MIN_HOLD_MS = Number(process.env.POCKETAGENT_PTT_MIN_HOLD_MS ?? 600);
 
-  const watcher = startButtonWatcher();
+const watcher = (PTT_MODE === 'whisplay') ? startWhisplayButtonWatcher() : startButtonWatcher();
   watcher
     .onPress(() => {
       if (inTurn) return;

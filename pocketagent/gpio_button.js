@@ -50,6 +50,33 @@ export function startButtonWatcher({
   let buf = '';
   let proc = null;
 
+  // Software debounce + edge state (fixes Whisplay button bounce causing instant abort)
+  let lastEdgeAtMs = 0;
+  let isPressed = false;
+
+  function handleEdge(edge) {
+    const now = Date.now();
+    const action = edgeToAction(edge);
+
+    // First: ignore duplicates WITHOUT touching debounce timer
+    if (action === 'press' && isPressed) return;
+    if (action === 'release' && !isPressed) return;
+
+    // Then: debounce only for state-changing events
+    if (now - lastEdgeAtMs < debounceMs) return;
+    lastEdgeAtMs = now;
+
+    if (action === 'press') {
+      isPressed = true;
+      console.log('[PocketAgent][gpio] PRESS');
+      emit('press');
+    } else {
+      isPressed = false;
+      console.log('[PocketAgent][gpio] RELEASE');
+      emit('release');
+    }
+  }
+
   function emit(kind) {
     for (const fn of listeners[kind]) {
       try { fn(); } catch {}
@@ -87,13 +114,14 @@ export function startButtonWatcher({
         // Numeric format: 0=failing, 1=rising
         if (lower === '0' || lower === '1') {
           const edge = lower === '0' ? 'falling' : 'rising';
-          emit(edgeToAction(edge));
+          console.log('[PocketAgent][gpio] EDGE', { raw: lower, edge, activeLow });
+          handleEdge(edge);
           continue;
         }
 
         const m = lower.match(/\b(rising|falling)\b/);
         if (!m) continue;
-        emit(edgeToAction(m[1]));
+        handleEdg(m[1]);
       }
     });
 
