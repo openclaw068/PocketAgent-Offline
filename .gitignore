@@ -6,3 +6,7 @@ data/
 
 # local debug/backups
 *.bak*
+
+# python
+__pycache__/
+*.pyc
