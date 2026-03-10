@@ -111,7 +111,7 @@ export async function handleUtterance({ baseUrl, apiKeyEnv, model, text, state }
   }
 
   if (state.pending?.kind === 'confirm_followup') {
-    if (/\b(yes|yep|yeah|correct|sounds right|ok|okay)\b/i.test(t)) {
+    if (/\b(yes|yep|yeah|yas|ya|yup|sure|correct|sounds right|sounds good|ok|okay|do it|jas)\b/i.test(t)) {
       const { reminderText, timeText, followupSpec, recurrence } = state.pending;
       return {
         intent: 'set_followup',
