@@ -12,7 +12,8 @@ export async function routeUtterance({ baseUrl, apiKeyEnv, model, text, hasLastN
       'ack_reminder',
       'update_followup_defaults',
       'set_volume',
-      'general_chat'
+      'general_chat',
+      'unknown'
     ],
     // create_reminder
     reminderText: 'string|null',
@@ -40,9 +41,12 @@ export async function routeUtterance({ baseUrl, apiKeyEnv, model, text, hasLastN
     'Return ONLY valid JSON with no markdown. ' +
     'Prefer reminders intents when the user is asking about reminders, scheduling, completing, canceling, or what\'s coming up. ' +
     'If the user is just chatting (trivia, random questions), choose intent="general_chat". ' +
+    'IMPORTANT: If the user says anything like "remind me" / "set a reminder" / "remember to" then intent MUST be "create_reminder". ' +
+    'IMPORTANT: If the user is answering a follow-up timing question with something like "every 5 minutes", "every five minutes", "every hour", etc., set intent="unknown" (do NOT change defaults). ' +
+    'Only choose intent="update_followup_defaults" when the user clearly says they want to change DEFAULTS (e.g. "set my default follow-ups to every 5 minutes"). ' +
     'For acknowledgements: if user indicates completion (done/complete/finished) and there is a recent reminder context, choose intent="ack_reminder" with ackTarget="latest". ' +
     'If the user says to complete a specific reminder by description, choose ackTarget="by_text" and set ackText to the short description (e.g., "trash"). ' +
-    'For creating reminders, extract reminderText and timeText in the user\'s words (timeText should be a short phrase like "7am" or "tomorrow 7am"). ' +
+    'For creating reminders, extract reminderText and timeText in the user\'s words. timeText can be a clock time ("7am") OR a relative time ("in 5 minutes", "in one minute"). ' +
     'If the user asks for a repeating reminder (e.g. "every other Tuesday", "weekends", "every day"), set recurrence.kind="rrule" and provide an RFC5545 RRULE string (no DTSTART) plus timezone (usually America/Chicago unless user says otherwise). ' +
     'If it is not repeating, set recurrence.kind="none". ' +
     'If time is missing for creation, still choose create_reminder and leave timeText=null.';

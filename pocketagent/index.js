@@ -481,6 +481,7 @@ async function oneTurn({ abortSignal = null } = {}) {
         text,
         hasLastNotified: !!runtime.state.lastNotifiedReminderId
       });
+      console.log('[PocketAgent] router:', routed);
     }
 
     // 2) Translate router output into the existing reminders state machine where helpful
