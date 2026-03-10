@@ -143,6 +143,13 @@ export async function handleUtterance({ baseUrl, apiKeyEnv, model, text, state }
     let s = text.trim().toLowerCase();
     if (!s) return false;
 
+    // Accept relative times too (common for voice):
+    // - "in 5 minutes", "in one minute", "in 2 hours"
+    // - "in a minute", "in an hour"
+    if (/^in\s+(a|an|one|\d+)\s+(second|seconds|sec|secs|minute|minutes|min|mins|hour|hours|hr|hrs)\b/.test(s)) {
+      return true;
+    }
+
     // normalize common spoken variants:
     // "a.m."/"p.m." -> "am"/"pm", remove periods, collapse whitespace
     s = s

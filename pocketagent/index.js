@@ -601,7 +601,11 @@ async function oneTurn({ abortSignal = null } = {}) {
       if (r1.intent === 'set_followup' && runtime.state.collected) {
         const { reminderText, timeText, followupSpec } = runtime.state.collected;
         runtime.state.collected = null;
+
+        console.log('[PocketAgent] saving reminder via daemon:', { reminderText, timeText, followupSpec });
         const r = await remindersPost('/reminders/add', { reminderText, timeText, followupSpec });
+        console.log('[PocketAgent] /reminders/add response:', { status: r?.status, ok: r?.json?.ok, json: r?.json ?? null, raw: r?.raw ?? null });
+
         if (r?.json?.ok) {
           void displayUpdate({ status: 'idle', line1: 'Reminder saved', line2: `${timeText}: ${String(reminderText || '').slice(0, 120)}` });
           await say(`Perfect — I’ll remind you at ${timeText}.`);
