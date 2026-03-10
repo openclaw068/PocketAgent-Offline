@@ -680,6 +680,7 @@ async function oneTurn({ abortSignal = null } = {}) {
 
       // Default: speak state machine response if provided
       if (r1.say) {
+        console.log('[PocketAgent] handled intent:', { intent: r1.intent, pending: runtime.state?.pending?.kind ?? null });
         await say(r1.say);
         return;
       }
