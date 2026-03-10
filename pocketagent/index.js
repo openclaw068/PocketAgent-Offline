@@ -464,22 +464,24 @@ async function oneTurn({ abortSignal = null } = {}) {
   // In chat mode, route with the LLM (natural language) and execute local reminder actions.
   // Fall back to open-ended chat only when the router says it's general chat.
   if (DEFAULTS.mode === 'chat') {
-    // If we are mid-flow (e.g., confirming which reminder to complete),
-    // prioritize the deterministic state machine so plain "yes/no" works.
+    // If we are mid-flow (e.g., collecting reminder details / confirmations),
+    // DO NOT run the LLM router. It can misclassify short replies ("yes", "every 5 minutes")
+    // and overwrite the pending state machine.
+    let routed = null;
     if (runtime.state?.pending?.kind) {
       const r0 = await handleUtterance({ baseUrl, apiKeyEnv, model: DEFAULTS.chatModel, text, state: runtime.state });
       runtime.state = r0.state ?? runtime.state;
       runtime.state._routedIntent = r0;
+    } else {
+      // 1) LLM router (broad NL understanding)
+      routed = await routeUtterance({
+        baseUrl,
+        apiKeyEnv,
+        model: DEFAULTS.chatModel,
+        text,
+        hasLastNotified: !!runtime.state.lastNotifiedReminderId
+      });
     }
-
-    // 1) LLM router (broad NL understanding)
-    const routed = await routeUtterance({
-      baseUrl,
-      apiKeyEnv,
-      model: DEFAULTS.chatModel,
-      text,
-      hasLastNotified: !!runtime.state.lastNotifiedReminderId
-    });
 
     // 2) Translate router output into the existing reminders state machine where helpful
     // (keeps time/follow-up confirmation flows intact).
