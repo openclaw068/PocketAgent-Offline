@@ -65,6 +65,40 @@ export class ReminderEngine {
     return r;
   }
 
+  update(id, patch = {}) {
+    const r = this.state.reminders.find(x => x.id === id);
+    if (!r) return null;
+
+    // Apply supported patches
+    if (patch.text != null) r.text = String(patch.text);
+    if (patch.dueAtIso != null) r.dueAtIso = String(patch.dueAtIso);
+
+    if (patch.followupEveryMin !== undefined) r.followupEveryMin = patch.followupEveryMin === null ? null : Number(patch.followupEveryMin);
+    if (patch.followupMaxCount !== undefined) r.followupMaxCount = patch.followupMaxCount === null ? null : Number(patch.followupMaxCount);
+    if (patch.followupQuietHours !== undefined) r.followupQuietHours = patch.followupQuietHours;
+
+    // Reset follow-up counters if relevant settings changed
+    r.followupCount = 0;
+    r.lastNotifiedAtIso = null;
+
+    this.save();
+    this._scheduleReminder(r);
+    this._cancelFollowup(r.id);
+
+    return r;
+  }
+
+  delete(id) {
+    const idx = this.state.reminders.findIndex(x => x.id === id);
+    if (idx < 0) return null;
+    const r = this.state.reminders[idx];
+    this.state.reminders.splice(idx, 1);
+    this.save();
+    this._cancel(id);
+    this._cancelFollowup(id);
+    return r;
+  }
+
   acknowledge(id) {
     const r = this.state.reminders.find(x => x.id === id);
     if (!r) return null;

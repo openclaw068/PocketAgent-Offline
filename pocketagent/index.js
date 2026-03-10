@@ -316,6 +316,33 @@ async function drainNotifyQueue() {
   }
 }
 
+// If we're waiting for user input (pending flow) and nothing happens for N seconds,
+// revert back to idle.
+const PENDING_IDLE_TIMEOUT_SECS = Number(process.env.POCKETAGENT_PENDING_IDLE_TIMEOUT_SECS ?? 15);
+let _pendingIdleTimer = null;
+let _lastTurnAt = Date.now();
+
+function touchTurn() {
+  _lastTurnAt = Date.now();
+  schedulePendingIdleTimeout();
+}
+
+function schedulePendingIdleTimeout() {
+  if (_pendingIdleTimer) clearTimeout(_pendingIdleTimer);
+  if (!PENDING_IDLE_TIMEOUT_SECS || PENDING_IDLE_TIMEOUT_SECS <= 0) return;
+
+  _pendingIdleTimer = setTimeout(() => {
+    try {
+      if (runtime.state?.pending?.kind) {
+        console.log('[PocketAgent] pending timeout -> idle', { pending: runtime.state.pending.kind });
+        runtime.state.pending = null;
+        runtime.state._routedIntent = null;
+        void displayUpdate({ status: 'idle', line1: 'PocketAgent', line2: '' });
+      }
+    } catch {}
+  }, PENDING_IDLE_TIMEOUT_SECS * 1000);
+}
+
 function startNotifyServer() {
   const server = http.createServer(async (req, res) => {
     try {
@@ -398,6 +425,7 @@ async function maybeAnnounceStartupOncePerBoot() {
 void maybeAnnounceStartupOncePerBoot();
 
 async function oneTurn({ abortSignal = null } = {}) {
+  touchTurn();
   busy = true;
   try {
     const wavPath = path.join(DATA_DIR, `input-${Date.now()}.wav`);
@@ -498,6 +526,18 @@ async function oneTurn({ abortSignal = null } = {}) {
         return;
       }
 
+      if (r1.intent === 'delete_by_id' && r1.id) {
+        await remindersPost('/reminders/delete', { id: r1.id });
+        await say(r1.say || 'Deleted.');
+        return;
+      }
+
+      if (r1.intent === 'update_by_id' && r1.id) {
+        await remindersPost('/reminders/update', { id: r1.id, patch: r1.patch || {} });
+        await say(r1.say || 'Updated.');
+        return;
+      }
+
       if (r1.say) {
         await say(r1.say);
 
@@ -592,6 +632,97 @@ async function oneTurn({ abortSignal = null } = {}) {
     } else if (routed?.intent === 'set_volume' && routed.volumePercent != null) {
       const pct = await setVolumePercent({ card: DEFAULTS.alsaCard, control: DEFAULTS.alsaVolumeControl, percent: routed.volumePercent });
       await say(`Done — volume set to ${pct} percent.`);
+      return;
+    } else if (routed?.intent === 'delete_reminder') {
+      // Delete reminder (latest or by text) with confirmation when ambiguous.
+      const open = await remindersGet('/reminders/open');
+      const reminders = open?.json?.reminders || [];
+
+      let target = null;
+      if (routed.target === 'latest' || (reminders.length === 1)) {
+        target = reminders[0] || null;
+      } else if (routed.target === 'by_text' && routed.targetText) {
+        const { best, bestScore } = bestReminderMatch({ reminders, queryText: routed.targetText });
+        if (best && bestScore >= 25) target = best;
+      }
+
+      if (!target) {
+        await say("I couldn't find that reminder. What should I delete?");
+        return;
+      }
+
+      // Confirm deletion
+      runtime.state.pending = { kind: 'confirm_ack', ackId: target.id };
+      await say(`Do you want me to delete: ${target.text}?`);
+      // Reuse confirm_ack state, but in handler we treat ackId as delete target when _deleteOnConfirm=true
+      runtime.state.pending._deleteOnConfirm = true;
+      return;
+    } else if (routed?.intent === 'update_reminder') {
+      const open = await remindersGet('/reminders/open');
+      const reminders = open?.json?.reminders || [];
+
+      let target = null;
+      if (routed.target === 'latest' || (reminders.length === 1)) {
+        target = reminders[0] || null;
+      } else if (routed.target === 'by_text' && routed.targetText) {
+        const { best, bestScore } = bestReminderMatch({ reminders, queryText: routed.targetText });
+        if (best && bestScore >= 25) target = best;
+      }
+
+      if (!target) {
+        await say("I couldn't find that reminder. Which one do you want to change?");
+        return;
+      }
+
+      // For now we support updating followupEveryMin and/or timeText and/or text.
+      const update = routed.update || {};
+      const patch = {};
+
+      if (update.followupEveryMin != null) patch.followupEveryMin = Number(update.followupEveryMin);
+      if (update.reminderText) patch.text = String(update.reminderText);
+
+      if (update.timeText) {
+        // Reuse daemon's parseDue by just sending timeText through a small helper here is overkill.
+        // We accept the timeText string and let daemon parse it by sending dueAtIso? (not available).
+        // So: for now, we update by re-creating dueAtIso locally using same parseDue logic as daemon.
+        const dueAtIso = (function parseDue(timeText) {
+          const now = new Date();
+          const t = String(timeText || '').trim().toLowerCase();
+          let m = t.match(/^in\s+(a|an|one|\d+)\s+(second|seconds|sec|secs|minute|minutes|min|mins|hour|hours|hr|hrs)\b/);
+          if (m) {
+            const nRaw = m[1];
+            const unit = m[2];
+            const n = (nRaw === 'a' || nRaw === 'an' || nRaw === 'one') ? 1 : Number(nRaw);
+            const mult = unit.startsWith('hour') || unit.startsWith('hr') ? 3600_000 : unit.startsWith('sec') ? 1000 : 60_000;
+            return new Date(Date.now() + n * mult).toISOString();
+          }
+          // fallback to existing absolute-time parser pattern used in daemon
+          const t2 = t.replace(/\b([ap])\s*\.?\s*m\.?\b/g, (_, ap) => `${ap}m`).replace(/\./g, '').replace(/\s+/g, ' ').replace(/^at\s+/i, '').trim();
+          const mm = t2.match(/^(tomorrow\s+)?(at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i);
+          if (!mm) return new Date(Date.now() + 60_000).toISOString();
+          const isTomorrow = !!mm[1];
+          let hh = Number(mm[3]);
+          const mins = mm[4] ? Number(mm[4]) : 0;
+          const ap = mm[5]?.toLowerCase();
+          if (ap === 'pm' && hh < 12) hh += 12;
+          if (ap === 'am' && hh === 12) hh = 0;
+          const due = new Date(now);
+          due.setSeconds(0, 0);
+          due.setHours(hh, mins, 0, 0);
+          if (isTomorrow || due <= now) due.setDate(due.getDate() + 1);
+          return due.toISOString();
+        })(update.timeText);
+        patch.dueAtIso = dueAtIso;
+      }
+
+      if (!Object.keys(patch).length) {
+        await say('Okay — what do you want to change about it?');
+        return;
+      }
+
+      // Confirm update
+      runtime.state.pending = { kind: 'confirm_ack', ackId: target.id, _updatePatch: patch };
+      await say(`Just to confirm — update "${target.text}". Sound right?`);
       return;
     } else if (routed?.intent !== 'general_chat') {
       // If router produced something we don't handle yet, fall back to the legacy state machine.

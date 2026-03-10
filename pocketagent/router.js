@@ -11,6 +11,8 @@ export async function routeUtterance({ baseUrl, apiKeyEnv, model, text, hasLastN
       'query_reminders',
       'ack_reminder',
       'update_followup_defaults',
+      'update_reminder',
+      'delete_reminder',
       'set_volume',
       'general_chat',
       'unknown'
@@ -32,6 +34,16 @@ export async function routeUtterance({ baseUrl, apiKeyEnv, model, text, hasLastN
     ackText: 'string|null',
     // update_followup_defaults
     defaultsText: 'string|null',
+
+    // update/delete reminders
+    target: 'latest|by_text|null',
+    targetText: 'string|null',
+    update: {
+      timeText: 'string|null',
+      reminderText: 'string|null',
+      followupEveryMin: 'number|null'
+    },
+
     // set_volume
     volumePercent: 'number|null'
   };
@@ -44,6 +56,8 @@ export async function routeUtterance({ baseUrl, apiKeyEnv, model, text, hasLastN
     'IMPORTANT: If the user says anything like "remind me" / "set a reminder" / "remember to" then intent MUST be "create_reminder". ' +
     'IMPORTANT: If the user is answering a follow-up timing question with something like "every 5 minutes", "every five minutes", "every hour", etc., set intent="unknown" (do NOT change defaults). ' +
     'Only choose intent="update_followup_defaults" when the user clearly says they want to change DEFAULTS (e.g. "set my default follow-ups to every 5 minutes"). ' +
+    'For updating reminders: if user says "change/update/edit" a reminder, choose intent="update_reminder". Use target="latest" when they say "latest" or if there is only one open reminder. Use target="by_text" when they describe it; put that description in targetText. Put changes in update (timeText, reminderText, followupEveryMin). ' +
+    'For deleting reminders: if user says "delete/remove/cancel" a reminder, choose intent="delete_reminder" with the same target fields. ' +
     'For acknowledgements: if user indicates completion (done/complete/finished) and there is a recent reminder context, choose intent="ack_reminder" with ackTarget="latest". ' +
     'If the user says to complete a specific reminder by description, choose ackTarget="by_text" and set ackText to the short description (e.g., "trash"). ' +
     'For creating reminders, extract reminderText and timeText in the user\'s words. timeText can be a clock time ("7am") OR a relative time ("in 5 minutes", "in one minute"). ' +

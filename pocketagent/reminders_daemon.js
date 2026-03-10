@@ -186,6 +186,25 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ok: true, reminder: r });
     }
 
+    if (req.method === 'POST' && u.pathname === '/reminders/delete') {
+      const body = await readJson(req);
+      const id = String(body?.id || '').trim();
+      if (!id) return json(res, 400, { ok: false, error: 'missing id' });
+      const r = engine.delete(id);
+      if (!r) return json(res, 404, { ok: false, error: 'not found' });
+      return json(res, 200, { ok: true, reminder: r });
+    }
+
+    if (req.method === 'POST' && u.pathname === '/reminders/update') {
+      const body = await readJson(req);
+      const id = String(body?.id || '').trim();
+      const patch = body?.patch ?? {};
+      if (!id) return json(res, 400, { ok: false, error: 'missing id' });
+      const r = engine.update(id, patch);
+      if (!r) return json(res, 404, { ok: false, error: 'not found' });
+      return json(res, 200, { ok: true, reminder: r });
+    }
+
     if (req.method === 'GET' && u.pathname === '/reminders/open') {
       return json(res, 200, { ok: true, reminders: engine.listOpen() });
     }

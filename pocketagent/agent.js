@@ -91,8 +91,27 @@ export async function handleUtterance({ baseUrl, apiKeyEnv, model, text, state }
 
   // Pending: confirm follow-up policy for a reminder
   if (state.pending?.kind === 'confirm_ack') {
-    if (/\b(yes|yep|yeah|correct|sounds right|ok|okay)\b/i.test(t)) {
+    if (/\b(yes|yep|yeah|yas|ya|yup|sure|correct|sounds right|sounds good|ok|okay|do it|jas)\b/i.test(t)) {
       const { ackId } = state.pending;
+      // Reuse this confirmation step for delete/update actions as well.
+      if (state.pending._deleteOnConfirm) {
+        return {
+          intent: 'delete_by_id',
+          id: ackId,
+          say: `Okay — deleting it.`,
+          state: { ...state, pending: null }
+        };
+      }
+      if (state.pending._updatePatch) {
+        return {
+          intent: 'update_by_id',
+          id: ackId,
+          patch: state.pending._updatePatch,
+          say: `Okay — updating it.`,
+          state: { ...state, pending: null }
+        };
+      }
+
       return {
         intent: 'ack_by_id',
         id: ackId,
