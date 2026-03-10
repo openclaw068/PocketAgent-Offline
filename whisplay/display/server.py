@@ -1,6 +1,56 @@
 #!/usr/bin/env python3
 """Whisplay display sidecar for PocketAgent.
 
+# head + ear pads (match reference style)
+
+cx, cy = (W // 2, 110 + bob_y)  # TEMP DEBUG: move face up
+
+
+# head: slightly wider than tall (like reference)
+    rx, ry = 76, 64
+d.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=(255, 255, 255))
+
+
+# ear pads: flat inner edge, rounded outer edge, slight gap from head
+    pad_w, pad_h = 14, 44
+    gap = 10
+# left pad: flat edge at inner_x, rounded outer with half-ellipse
+
+inner_x = cx - rx - gap
+
+outer_x = inner_x - pad_w
+
+top_y = cy - pad_h // 2
+
+bot_y = cy + pad_h // 2
+
+d.rectangle((outer_x + pad_w//2, top_y, inner_x, bot_y), fill=(255, 255, 255))
+
+d.ellipse((outer_x, top_y, outer_x + pad_w, bot_y), fill=(255, 255, 255))
+
+
+# right pad
+
+inner_x = cx + rx + gap
+
+outer_x = inner_x + pad_w
+
+d.rectangle((inner_x, top_y, outer_x - pad_w//2, bot_y), fill=(255, 255, 255))
+
+d.ellipse((outer_x - pad_w, top_y, outer_x, bot_y), fill=(255, 255, 255))
+
+
+# eyes:
+# mouth (simple)
+
+mx0, my0, mx1, my1 = (92, 170 + bob_y, 148, 196 + bob_y)
+
+# small smile line (white)
+
+d.arc((mx0, my0, mx1, my1), start=20, end=160, fill=(255, 255, 255), width=4)
+
+
+# subtitle bubble
 Goals:
 - dead-simple integration: PocketAgent POSTs events to localhost
 - render a basic status UI + last assistant text + next reminder
@@ -144,22 +194,8 @@ def render_frame(s: dict, t: float):
     img = Image.new("RGB", (W, H), (0, 0, 0))
     d = ImageDraw.Draw(img)
 
-    # background gradient
-    c1, c2, c3 = _bg_color_for(status)
-    for y in range(H):
-        # three-stop lerp: top->mid and mid->bottom
-        if y < H * 0.6:
-            a = y / (H * 0.6)
-            r = int(c1[0] + (c2[0] - c1[0]) * a)
-            g = int(c1[1] + (c2[1] - c1[1]) * a)
-            b = int(c1[2] + (c2[2] - c1[2]) * a)
-        else:
-            a = (y - H * 0.6) / (H * 0.4)
-            r = int(c2[0] + (c3[0] - c2[0]) * a)
-            g = int(c2[1] + (c3[1] - c2[1]) * a)
-            b = int(c2[2] + (c3[2] - c2[2]) * a)
-        d.line([(0, y), (W, y)], fill=(r, g, b))
-
+    # solid black background
+    d.rectangle((0, 0, W, H), fill=(0, 0, 0))
     # status pill
     label = (status or "idle").upper()
     pill = (60, 14, 180, 38)
@@ -167,83 +203,61 @@ def render_frame(s: dict, t: float):
     if _FONT_STATUS is not None:
         tw = d.textlength(label, font=_FONT_STATUS)
         d.text(((W - tw) // 2, 18), label, font=_FONT_STATUS, fill=(60, 80, 120))
+    bob_y = 0
 
-    # robot head bob
-    bob = 2.0 * (0.5 - abs(((t / 2.6) % 1.0) - 0.5))  # triangle wave 0..1
-    bob_y = int(bob * 2) - 1
+    # Eyes + face (minimal, black/white) — keep UI elements elsewhere
 
-    head = (30, 55 + bob_y, 210, 225 + bob_y)
-    d.rounded_rectangle(head, radius=44, fill=(248, 250, 255), outline=(210, 220, 245), width=4)
-    inner = (38, 63 + bob_y, 202, 217 + bob_y)
-    d.rounded_rectangle(inner, radius=38, outline=(255, 255, 255), width=2)
-
-    # antenna
-    ax = W // 2
-    stem = (ax - 4, 45 + bob_y, ax + 4, 65 + bob_y)
-    d.rounded_rectangle(stem, radius=4, fill=(210, 220, 245))
-    bulb = (ax - 14, 28 + bob_y, ax + 14, 56 + bob_y)
-    d.ellipse(bulb, fill=(255, 120, 180), outline=(255, 255, 255), width=2)
-    shine = (ax - 8, 32 + bob_y, ax - 2, 44 + bob_y)
-    d.ellipse(shine, fill=(255, 200, 225))
-
-    # Eyes: animate per status
     blink_phase = (t % 6.0)
+
     blinking = 5.6 < blink_phase < 5.9 and status == "idle"
 
-    eye1 = [70, 95 + bob_y, 120, 145 + bob_y]
-    eye2 = [120, 95 + bob_y, 170, 145 + bob_y]
 
-    if status == "listening":
-        # widen
-        eye1[1] -= 3
-        eye1[3] += 3
-        eye2[1] -= 3
-        eye2[3] += 3
-    elif status == "thinking":
-        # slight horizontal drift
-        drift = int(((t * 2) % 2 - 1) * 3)
-        eye1[0] += drift
-        eye1[2] += drift
-        eye2[0] += drift
-        eye2[2] += drift
+    # head + ear pads (reference-style)
+    cx, cy = (W // 2, 140 + bob_y)
+    # head: slightly wider than tall
+    rx, ry = 80, 68
+    d.ellipse((cx - rx, cy - ry, cx + rx, cy + ry), fill=(255, 255, 255))
 
-    def draw_eye(e):
-        x0, y0, x1, y1 = e
+    # ear pads: flat inner edge, rounded outer edge, with a gap from the head
+    pad_w, pad_h = 16, 50
+    gap = 10
+    top_y = cy - pad_h // 2
+    bot_y = cy + pad_h // 2
+
+    # left ear (flat inner wall at inner_x, rounded outer dome)
+    inner_x = cx - rx - gap
+    outer_x = inner_x - pad_w
+    d.rectangle((outer_x + pad_w//2, top_y, inner_x, bot_y), fill=(255, 255, 255))
+    d.ellipse((outer_x, top_y, outer_x + pad_w, bot_y), fill=(255, 255, 255))
+
+    # right ear
+    inner_x = cx + rx + gap
+    outer_x = inner_x + pad_w
+    d.rectangle((inner_x, top_y, outer_x - pad_w//2, bot_y), fill=(255, 255, 255))
+    d.ellipse((outer_x - pad_w, top_y, outer_x, bot_y), fill=(255, 255, 255))
+
+    # eyes: spherical circles + single highlight dot
+    eye_r = 26
+    eye_dx = 37
+    eye_y  = cy - 22
+
+    for ex in (cx - eye_dx, cx + eye_dx):
         if blinking:
-            d.rounded_rectangle((x0, (y0 + y1) // 2 - 3, x1, (y0 + y1) // 2 + 3), radius=6, fill=(30, 40, 60))
-            return
-        d.rounded_rectangle((x0, y0, x1, y1), radius=18, fill=(30, 40, 60))
-        d.ellipse((x0 + 10, y0 + 10, x0 + 22, y0 + 22), fill=(255, 255, 255))
-        d.ellipse((x0 + 22, y0 + 22, x0 + 28, y0 + 28), fill=(200, 230, 255))
-
-    draw_eye(eye1)
-    draw_eye(eye2)
-
-    # cheeks
-    for cx in (62, 178):
-        d.ellipse((cx - 10, 152 + bob_y, cx + 10, 172 + bob_y), fill=(255, 205, 220))
-
-    # mouth shapes
-    mouth = (92, 160 + bob_y, 148, 178 + bob_y)
-    d.rounded_rectangle(mouth, radius=12, fill=(235, 240, 255), outline=(210, 220, 245), width=2)
-
-    if status == "speaking":
-        phase = int((t * 8) % 4)
-        if phase == 0:
-            d.arc((96, 160 + bob_y, 144, 184 + bob_y), start=200, end=340, fill=(120, 140, 180), width=3)
-        elif phase == 1:
-            d.rounded_rectangle((102, 167 + bob_y, 138, 171 + bob_y), radius=3, fill=(120, 140, 180))
-        elif phase == 2:
-            d.ellipse((110, 164 + bob_y, 130, 176 + bob_y), outline=(120, 140, 180), width=3)
+            d.rounded_rectangle((ex - eye_r, eye_y - 4, ex + eye_r, eye_y + 4), radius=8, fill=(0, 0, 0))
         else:
-            d.arc((96, 162 + bob_y, 144, 186 + bob_y), start=210, end=330, fill=(120, 140, 180), width=3)
-    elif status == "reminder":
-        # surprised mouth
-        d.ellipse((114, 164 + bob_y, 126, 176 + bob_y), outline=(120, 140, 180), width=3)
-    else:
-        d.arc((96, 162 + bob_y, 144, 186 + bob_y), start=200, end=340, fill=(120, 140, 180), width=3)
+            d.ellipse((ex - eye_r, eye_y - eye_r, ex + eye_r, eye_y + eye_r), fill=(0, 0, 0))
+            hl_r = 8
+            hx, hy = ex - 12, eye_y - 12
+            d.ellipse((hx - hl_r, hy - hl_r, hx + hl_r, hy + hl_r), fill=(255, 255, 255))
+    # mouth: simple small smile (black) on white head
+
+    mx0, my0, mx1, my1 = (cx - 26, cy + 27, cx + 26, cy + 51)
+
+    d.arc((mx0, my0, mx1, my1), start=20, end=160, fill=(0, 0, 0), width=5)
+
 
     # subtitle bubble
+
     subtitle = (s.get("line2") or s.get("next") or "").strip()
     if subtitle:
         subtitle = subtitle[:SUBTITLE_MAX_CHARS]
