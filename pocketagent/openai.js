@@ -90,7 +90,7 @@ export async function chat({ baseUrl, apiKeyEnv, model, messages }) {
   return json.choices?.[0]?.message?.content ?? '';
 }
 
-export async function ttsToAudio({ baseUrl, apiKeyEnv, model, voice, text, format = 'wav' }) {
+export async function ttsToAudio({ baseUrl, apiKeyEnv, model, voice, text, format = 'wav', speed = null }) {
   const apiKey = getApiKey(apiKeyEnv);
   const url = `${baseUrl.replace(/\/$/, '')}/audio/speech`;
 
@@ -102,7 +102,8 @@ export async function ttsToAudio({ baseUrl, apiKeyEnv, model, voice, text, forma
     voice,
     input: text,
     format,
-    response_format: format
+    response_format: format,
+    ...(speed != null ? { speed: Number(speed) } : {})
   };
 
   const res = await fetchWithRetry(url, {

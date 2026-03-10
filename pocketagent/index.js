@@ -155,13 +155,15 @@ async function say(text) {
     // Show what we're about to say on the display.
     void displayUpdate({ status: 'speaking', line1: 'PocketAgent', line2: spoken.slice(0, 160) });
 
+    const ttsSpeed = Number(process.env.POCKETAGENT_TTS_SPEED ?? 1.0);
     const { audio, contentType } = await ttsToAudio({
       baseUrl,
       apiKeyEnv,
       model: DEFAULTS.ttsModel,
       voice: DEFAULTS.ttsVoice,
       text: spoken,
-      format: 'wav'
+      format: 'wav',
+      speed: ttsSpeed
     });
     const out = path.join(DATA_DIR, 'tts.wav');
     fs.writeFileSync(out, audio);

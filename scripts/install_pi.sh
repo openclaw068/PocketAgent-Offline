@@ -106,6 +106,9 @@ POCKETAGENT_PTT_COOLDOWN_MS=200
 # Optional: disable the "hold the button" spoken prompt
 POCKETAGENT_PROMPT_ON_PRESS=false
 
+# TTS speed (1.0 = normal). Try 1.2 for slightly faster speech.
+POCKETAGENT_TTS_SPEED=1.2
+
 # Chat mode memory carryover (persist last N messages between restarts)
 POCKETAGENT_CHAT_CARRYOVER_COUNT=10
 
