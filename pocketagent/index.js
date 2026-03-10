@@ -649,11 +649,17 @@ async function oneTurn({ abortSignal = null } = {}) {
       return;
     } else if (routed?.intent === 'delete_reminder') {
       // Delete reminder (latest or by text) with confirmation when ambiguous.
-      const open = await remindersGet('/reminders/open');
-      const reminders = open?.json?.reminders || [];
+      // Use ALL reminders so the user can delete old/done reminders too.
+      const all = await remindersGet('/reminders/all');
+      const reminders = all?.json?.reminders || [];
+
+      const openOnly = reminders.filter(r => r.status === 'open');
 
       let target = null;
-      if (routed.target === 'latest' || (reminders.length === 1)) {
+      if (routed.target === 'latest') {
+        // Prefer latest open; else fall back to most recent by createdAt.
+        target = openOnly[0] || reminders.sort((a,b) => new Date(b.createdAtIso) - new Date(a.createdAtIso))[0] || null;
+      } else if (reminders.length === 1) {
         target = reminders[0] || null;
       } else if (routed.target === 'by_text' && routed.targetText) {
         const { best, bestScore } = bestReminderMatch({ reminders, queryText: routed.targetText });
@@ -661,19 +667,17 @@ async function oneTurn({ abortSignal = null } = {}) {
       }
 
       if (!target) {
-        await say("I couldn't find that reminder. What should I delete?");
+        await say("I couldn't find that reminder. Which one should I delete?");
         return;
       }
 
       // Confirm deletion
-      runtime.state.pending = { kind: 'confirm_ack', ackId: target.id };
+      runtime.state.pending = { kind: 'confirm_ack', ackId: target.id, _deleteOnConfirm: true };
       await say(`Do you want me to delete: ${target.text}?`);
-      // Reuse confirm_ack state, but in handler we treat ackId as delete target when _deleteOnConfirm=true
-      runtime.state.pending._deleteOnConfirm = true;
       return;
     } else if (routed?.intent === 'update_reminder') {
-      const open = await remindersGet('/reminders/open');
-      const reminders = open?.json?.reminders || [];
+      const all = await remindersGet('/reminders/all');
+      const reminders = all?.json?.reminders || [];
 
       let target = null;
       if (routed.target === 'latest' || (reminders.length === 1)) {
