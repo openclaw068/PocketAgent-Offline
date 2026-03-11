@@ -1,0 +1,50 @@
+# PocketAgent Offline settings (example)
+
+hardware:
+  # Orange Pi Zero 3 running Armbian.
+  platform: orangepi
+
+ptt:
+  # For now we assume push-to-talk is handled by PocketAgent's existing GPIO watcher.
+  # Future: wake word.
+  enabled: true
+
+stt:
+  engine: whispercpp
+  # Path to whisper.cpp binary (built locally)
+  whispercpp_bin: /opt/whisper.cpp/main
+  # GGML model path
+  model: /opt/pocketagent-offline/models/whisper/tiny.en.bin
+  language: en
+
+llm:
+  engine: llamacpp
+  llama_bin: /opt/llama.cpp/main
+  model: /opt/pocketagent-offline/models/llm/qwen2.5-1.5b-instruct-q4_k_m.gguf
+  context: 2048
+  temperature: 0.1
+
+# Reflex commands bypass LLM
+reflex:
+  enabled: true
+
+tts:
+  engine: piper
+  piper_bin: /usr/bin/piper
+  voice: /opt/pocketagent-offline/models/piper/en_US-lessac-medium.onnx
+  speed: 1.2
+
+storage:
+  sqlite_path: /opt/pocketagent-offline/data/pocketagent.db
+
+reminders:
+  default_followup_minutes: 5
+  quiet_hours:
+    start: 23
+    end: 7
+
+memory:
+  enabled: true
+  # Minimal viable: sqlite table. Optional later: embeddings.
+  embeddings:
+    enabled: false
